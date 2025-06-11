@@ -10,7 +10,7 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { body } from 'express-validator';
 import { validateRequest } from './security.js';
-import stripe from './stripe.js';
+import stripe from './Stripe.js';
 dotenv.config();
 
 const app = express();
