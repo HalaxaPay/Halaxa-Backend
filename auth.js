@@ -14,11 +14,16 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     const { email, password, first_name, last_name } = req.body;
 
     // Check if user already exists
-    const { data: existingUser } = await supabase
+    const { data: existingUser, error: checkError } = await supabase
       .from('users')
       .select('*')
       .eq('email', email)
       .single();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('Error checking existing user:', checkError);
+      return res.status(500).json({ error: 'Error checking user existence' });
+    }
 
     if (existingUser) {
       return res.status(400).json({ error: 'User already exists' });
@@ -29,7 +34,7 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // Create user
-    const { data: newUser, error } = await supabase
+    const { data: newUser, error: createError } = await supabase
       .from('users')
       .insert([
         {
@@ -38,24 +43,31 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
           first_name,
           last_name,
           plan: 'basic',
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          is_email_verified: true // Set to true by default for now
         }
       ])
       .select()
       .single();
 
-    if (error) throw error;
+    if (createError) {
+      console.error('Error creating user:', createError);
+      return res.status(500).json({ 
+        error: 'Failed to create user',
+        details: createError.message 
+      });
+    }
 
     // Generate tokens
     const accessToken = jwt.sign(
       { id: newUser.id, email: newUser.email },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || 'your-temporary-secret-key', // Fallback for development
       { expiresIn: '1h' }
     );
 
     const refreshToken = jwt.sign(
       { id: newUser.id },
-      process.env.JWT_REFRESH_SECRET,
+      process.env.JWT_REFRESH_SECRET || 'your-temporary-refresh-key', // Fallback for development
       { expiresIn: '7d' }
     );
 
@@ -72,7 +84,10 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ 
+      error: 'An error occurred during registration',
+      details: error.message 
+    });
   }
 });
 
