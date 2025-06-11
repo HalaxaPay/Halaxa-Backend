@@ -1,29 +1,29 @@
 import express from 'express';
-import { query, withTransaction } from '../db.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { supabase } from '../supabase.js';
+import { authenticateToken } from '../authMiddleware.js';
+import { validateRequest } from '../security.js';
 
 const router = express.Router();
 
 // Get account details
-router.get('/details', authenticateToken, async (req, res) => {
+router.get('/:sellerId', authenticateToken, async (req, res) => {
   try {
-    const sellerId = req.user.userId;
+    const { sellerId } = req.params;
+    const { data: account, error } = await supabase
+      .from('accounts')
+      .select('*')
+      .eq('seller_id', sellerId)
+      .single();
 
-    const { data: account, error } = await query(async (supabase) => {
-      return await supabase.from('accounts')
-        .select('*')
-        .eq('seller_id', sellerId)
-        .single();
-    });
-
-    if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-      throw error;
+    if (error) throw error;
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
     }
 
-    res.json(account || { message: 'No account details found' });
+    res.json({ account });
   } catch (error) {
-    console.error('Get account details error:', error);
-    res.status(500).json({ error: 'Failed to get account details' });
+    console.error('Error fetching account details:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -33,14 +33,13 @@ router.put('/details', authenticateToken, async (req, res) => {
     const sellerId = req.user.userId;
     const { walletAddress, chain } = req.body;
 
-    const { error } = await query(async (supabase) => {
-      return await supabase.from('accounts')
-        .upsert({
-          seller_id: sellerId,
-          wallet_address: walletAddress,
-          chain
-        });
-    });
+    const { error } = await supabase
+      .from('accounts')
+      .upsert({
+        seller_id: sellerId,
+        wallet_address: walletAddress,
+        chain
+      });
 
     if (error) throw error;
 
@@ -52,30 +51,24 @@ router.put('/details', authenticateToken, async (req, res) => {
 });
 
 // Get account insights
-router.get('/insights', authenticateToken, async (req, res) => {
+router.get('/:sellerId/insights', authenticateToken, async (req, res) => {
   try {
-    const sellerId = req.user.userId;
+    const { sellerId } = req.params;
+    const { data: insights, error } = await supabase
+      .from('account_insights')
+      .select('*')
+      .eq('seller_id', sellerId)
+      .single();
 
-    const { data: insights, error } = await query(async (supabase) => {
-      return await supabase.from('account_insights')
-        .select('*')
-        .eq('seller_id', sellerId)
-        .single();
-    });
-
-    if (error && error.code !== 'PGRST116') {
-      throw error;
+    if (error) throw error;
+    if (!insights) {
+      return res.status(404).json({ error: 'Insights not found' });
     }
 
-    res.json(insights || {
-      securityScore: 0,
-      activityLevel: 'low',
-      accountAgeDays: 0,
-      verificationStatus: 'pending'
-    });
+    res.json({ insights });
   } catch (error) {
-    console.error('Get account insights error:', error);
-    res.status(500).json({ error: 'Failed to get account insights' });
+    console.error('Error fetching account insights:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -84,13 +77,12 @@ router.get('/activity', authenticateToken, async (req, res) => {
   try {
     const sellerId = req.user.userId;
 
-    const { data: activities, error } = await query(async (supabase) => {
-      return await supabase.from('user_activity')
-        .select('*')
-        .eq('seller_id', sellerId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-    });
+    const { data: activities, error } = await supabase
+      .from('user_activity')
+      .select('*')
+      .eq('seller_id', sellerId)
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (error) throw error;
 
@@ -106,13 +98,12 @@ router.get('/security-events', authenticateToken, async (req, res) => {
   try {
     const sellerId = req.user.userId;
 
-    const { data: events, error } = await query(async (supabase) => {
-      return await supabase.from('security_events')
-        .select('*')
-        .eq('seller_id', sellerId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-    });
+    const { data: events, error } = await supabase
+      .from('security_events')
+      .select('*')
+      .eq('seller_id', sellerId)
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (error) throw error;
 

@@ -4,7 +4,7 @@ dotenv.config();
 import express from 'express';
 import Stripe from 'stripe';
 import bodyParser from 'body-parser';
-import { initDB } from './db.js';
+import { supabase } from './supabase.js';
 
 const router = express.Router();
 
@@ -48,14 +48,15 @@ router.post(
 
       if (email && newPlan) {
         try {
-          const db = await initDB();
-          await db.run(`UPDATE users SET plan = ? WHERE email = ?`, [
-            newPlan,
-            email
-          ]);
+          const { error } = await supabase
+            .from('users')
+            .update({ plan: newPlan })
+            .eq('email', email);
+
+          if (error) throw error;
           console.log(`✅ Plan upgraded to ${newPlan} for ${email}`);
-        } catch (dbErr) {
-          console.error('❌ DB update failed:', dbErr.message);
+        } catch (err) {
+          console.error('❌ DB update failed:', err.message);
         }
       }
     }

@@ -1,24 +1,24 @@
 import express from 'express';
-import { query } from '../db.js';
+import { supabase } from '../supabase.js';
+import { authenticateToken } from '../authMiddleware.js';
+import { validateRequest } from '../security.js';
 
 const router = express.Router();
 
 // Get all FAQs
 router.get('/', async (req, res) => {
   try {
-    const { data: faqs, error } = await query(async (supabase) => {
-      return await supabase.from('faqs')
-        .select('*')
-        .order('priority', { ascending: false })
-        .order('category');
-    });
+    const { data: faqs, error } = await supabase
+      .from('faqs')
+      .select('*')
+      .order('priority', { ascending: true });
 
     if (error) throw error;
 
-    res.json(faqs);
+    res.json({ faqs });
   } catch (error) {
-    console.error('Get FAQs error:', error);
-    res.status(500).json({ error: 'Failed to get FAQs' });
+    console.error('Error fetching FAQs:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -26,20 +26,18 @@ router.get('/', async (req, res) => {
 router.get('/category/:category', async (req, res) => {
   try {
     const { category } = req.params;
-
-    const { data: faqs, error } = await query(async (supabase) => {
-      return await supabase.from('faqs')
-        .select('*')
-        .eq('category', category)
-        .order('priority', { ascending: false });
-    });
+    const { data: faqs, error } = await supabase
+      .from('faqs')
+      .select('*')
+      .eq('category', category)
+      .order('priority', { ascending: true });
 
     if (error) throw error;
 
-    res.json(faqs);
+    res.json({ faqs });
   } catch (error) {
-    console.error('Get FAQs by category error:', error);
-    res.status(500).json({ error: 'Failed to get FAQs by category' });
+    console.error('Error fetching FAQs by category:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -48,17 +46,15 @@ router.post('/', async (req, res) => {
   try {
     const { category, question, answer, priority } = req.body;
 
-    const { data: faq, error } = await query(async (supabase) => {
-      return await supabase.from('faqs')
-        .insert([{
-          category,
-          question,
-          answer,
-          priority: priority || 0
-        }])
-        .select()
-        .single();
-    });
+    const { data: faq, error } = await supabase.from('faqs')
+      .insert([{
+        category,
+        question,
+        answer,
+        priority: priority || 0
+      }])
+      .select()
+      .single();
 
     if (error) throw error;
 
@@ -75,19 +71,17 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { category, question, answer, priority } = req.body;
 
-    const { data: faq, error } = await query(async (supabase) => {
-      return await supabase.from('faqs')
-        .update({
-          category,
-          question,
-          answer,
-          priority,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select()
-        .single();
-    });
+    const { data: faq, error } = await supabase.from('faqs')
+      .update({
+        category,
+        question,
+        answer,
+        priority,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
 
     if (error) throw error;
 
@@ -103,11 +97,9 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { error } = await query(async (supabase) => {
-      return await supabase.from('faqs')
-        .delete()
-        .eq('id', id);
-    });
+    const { error } = await supabase.from('faqs')
+      .delete()
+      .eq('id', id);
 
     if (error) throw error;
 

@@ -11,24 +11,20 @@ import rateLimit from 'express-rate-limit';
 import { body } from 'express-validator';
 import { validateRequest } from './security.js';
 import stripe from './Stripe.js';
+import { supabase } from './supabase.js';
 dotenv.config();
-
-// Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Security middleware
-app.use(helmet()); // Adds various HTTP headers for security
-app.use(cookieParser()); // Parse cookies
+app.use(helmet());
+app.use(cookieParser());
 
-// Global rate limiting (100 requests per 15 minutes per IP)
+// Global rate limiting
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { error: 'Too many requests, please try again later.' }
 });
 app.use(globalLimiter);
@@ -51,9 +47,6 @@ app.use(express.json());
 app.get('/csrf-token', (req, res) => {
   res.json({ csrfToken: req.csrfToken() });
 });
-
-// In-memory storage for payment links
-const paymentLinks = {};
 
 // Helper to generate a unique ID
 function generateId(length = 9) {
@@ -142,49 +135,50 @@ app.post('/create-link',
     const { seller_id, plan } = req.user;
 
     try {
-      await query(async (db) => {
-        // Count how many links this seller already created
-        const count = await db.get(
-          'SELECT COUNT(*) AS total FROM payment_links WHERE seller_id = ?',
-          seller_id
-        );
+      // Count how many links this seller already created
+      const { count, error: countError } = await supabase
+        .from('payment_links')
+        .select('*', { count: 'exact' })
+        .eq('seller_id', seller_id)
+        .eq('status', 'active');
 
-        const maxLinksByPlan = {
-          basic: 1,
-          pro: 30,
-          elite: Infinity
-        };
+      if (countError) throw countError;
 
-        const maxAllowed = maxLinksByPlan[plan] ?? 0;
+      const maxLinksByPlan = {
+        basic: 1,
+        pro: 30,
+        elite: Infinity
+      };
 
-        if (count.total >= maxAllowed) {
-          return res.status(403).json({ error: 'Link limit reached for your plan' });
-        }
+      const maxAllowed = maxLinksByPlan[plan] ?? 0;
 
-        const link_id = 'link_' + generateId(9);
+      if (count >= maxAllowed) {
+        return res.status(403).json({ error: 'Link limit reached for your plan' });
+      }
 
-        await db.run(
-          `INSERT INTO payment_links (
-            link_id, wallet_address, amount_usdc, chain, 
-            product_title, seller_id, status, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            link_id,
-            wallet_address,
-            amount_usdc,
-            chain,
-            product_title,
-            seller_id,
-            'pending',
-            new Date().toISOString()
-          ]
-        );
+      const link_id = 'link_' + generateId(9);
 
-        res.json({ data: { link_id } });
-      });
+      const { data, error } = await supabase
+        .from('payment_links')
+        .insert([{
+          link_id,
+          wallet_address,
+          amount_usdc,
+          chain,
+          product_title,
+          seller_id,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ data: { link_id } });
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
+      console.error('Error creating payment link:', err);
+      res.status(500).json({ error: 'Failed to create payment link' });
     }
   });
 
@@ -194,45 +188,48 @@ const submitBuyerInfoValidationRules = [
   body('first_name').notEmpty().withMessage('First name is required'),
   body('last_name').notEmpty().withMessage('Last name is required'),
   body('email').isEmail().withMessage('Invalid email format'),
-  body('address').optional().isString().withMessage('Address must be a string'), // Address is optional
+  body('address').optional().isString().withMessage('Address must be a string'),
 ];
 
 app.post('/submit-buyer-info',
-  submitBuyerInfoValidationRules, // Add validation rules
-  validateRequest, // Add validation request middleware
+  submitBuyerInfoValidationRules,
+  validateRequest,
   async (req, res) => {
     const { link_id, first_name, last_name, email, address } = req.body;
 
     try {
-      await query(async (db) => {
-        const paymentLink = await db.get(
-          'SELECT id FROM payment_links WHERE link_id = ?',
-          link_id
-        );
+      // Get payment link
+      const { data: paymentLink, error: linkError } = await supabase
+        .from('payment_links')
+        .select('id')
+        .eq('link_id', link_id)
+        .single();
 
-        if (!paymentLink) {
-          return res.status(404).json({ error: 'Invalid link ID' });
-        }
+      if (linkError) throw linkError;
+      if (!paymentLink) {
+        return res.status(404).json({ error: 'Invalid link ID' });
+      }
 
-        await db.run(
-          `INSERT INTO buyers (
-            payment_link_id, first_name, last_name, email, address, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            paymentLink.id,
-            first_name,
-            last_name,
-            email,
-            address,
-            new Date().toISOString()
-          ]
-        );
+      // Store buyer information
+      const { data, error } = await supabase
+        .from('buyers')
+        .insert([{
+          payment_link_id: paymentLink.id,
+          first_name,
+          last_name,
+          email,
+          address,
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
 
-        res.json({ data: { message: 'Buyer info saved' } });
-      });
+      if (error) throw error;
+
+      res.json({ data: { message: 'Buyer info saved' } });
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
+      console.error('Error submitting buyer info:', err);
+      res.status(500).json({ error: 'Failed to submit buyer information' });
     }
   });
 
@@ -240,21 +237,21 @@ app.get('/payment-info/:link_id', async (req, res) => {
   const { link_id } = req.params;
 
   try {
-    await query(async (db) => {
-      const link = await db.get(
-        'SELECT product_title, amount_usdc, wallet_address, chain FROM payment_links WHERE link_id = ?',
-        link_id
-      );
+    const { data: link, error } = await supabase
+      .from('payment_links')
+      .select('product_title, amount_usdc, wallet_address, chain')
+      .eq('link_id', link_id)
+      .single();
 
-      if (!link) {
-        return res.status(404).json({ error: 'Link not found' });
-      }
+    if (error) throw error;
+    if (!link) {
+      return res.status(404).json({ error: 'Link not found' });
+    }
 
-      res.json({ data: link });
-    });
+    res.json({ data: link });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error fetching payment info:', err);
+    res.status(500).json({ error: 'Failed to fetch payment information' });
   }
 });
 
@@ -262,102 +259,105 @@ app.get('/payment-info/:link_id', async (req, res) => {
 const linkIdValidationRule = body('link_id').notEmpty().withMessage('Link ID is required');
 
 app.post('/i-paid',
-  linkIdValidationRule, // Add validation rule
-  validateRequest, // Add validation request middleware
+  linkIdValidationRule,
+  validateRequest,
   async (req, res) => {
     const { link_id } = req.body;
 
     try {
-      await query(async (db) => {
-        const link = await db.get(
-          'SELECT id FROM payment_links WHERE link_id = ?',
-          link_id
-        );
+      const { data: link, error: linkError } = await supabase
+        .from('payment_links')
+        .select('id')
+        .eq('link_id', link_id)
+        .single();
 
-        if (!link) {
-          return res.status(404).json({ error: 'Invalid link ID' });
-        }
+      if (linkError) throw linkError;
+      if (!link) {
+        return res.status(404).json({ error: 'Invalid link ID' });
+      }
 
-        await db.run(
-          'UPDATE payment_links SET status = ? WHERE id = ?',
-          ['verifying', link.id]
-        );
+      const { error: updateError } = await supabase
+        .from('payment_links')
+        .update({ status: 'verifying' })
+        .eq('id', link.id);
 
-        res.json({ data: { message: 'Payment confirmation started' } });
-      });
+      if (updateError) throw updateError;
+
+      res.json({ data: { message: 'Payment confirmation started' } });
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
+      console.error('Error updating payment status:', err);
+      res.status(500).json({ error: 'Failed to update payment status' });
     }
   });
 
 app.post('/verify-payment',
-  linkIdValidationRule, // Add validation rule
-  validateRequest, // Add validation request middleware
+  linkIdValidationRule,
+  validateRequest,
   async (req, res) => {
     const { link_id } = req.body;
 
     try {
-      await query(async (db) => {
-        const link = await db.get(
-          'SELECT id, wallet_address, amount_usdc, chain FROM payment_links WHERE link_id = ?',
-          link_id
-        );
+      const { data: link, error: linkError } = await supabase
+        .from('payment_links')
+        .select('id, wallet_address, amount_usdc, chain')
+        .eq('link_id', link_id)
+        .single();
 
-        if (!link) {
-          return res.status(404).json({ error: 'Link not found' });
+      if (linkError) throw linkError;
+      if (!link) {
+        return res.status(404).json({ error: 'Link not found' });
+      }
+
+      let result;
+      if (link.chain === 'Polygon') {
+        result = await checkPolygonUSDCReceived(link.wallet_address, link.amount_usdc);
+      } else if (link.chain === 'TRC20') {
+        result = await checkTRC20USDCReceived(link.wallet_address, link.amount_usdc);
+      } else {
+        return res.status(400).json({ error: 'Unsupported chain' });
+      }
+
+      if (result.found) {
+        // Check for duplicate transaction
+        const { data: existingPayment, error: paymentError } = await supabase
+          .from('payments')
+          .select('id')
+          .eq('transaction_hash', result.hash)
+          .single();
+
+        if (paymentError && paymentError.code !== 'PGRST116') throw paymentError;
+
+        if (!existingPayment) {
+          // Create payment record
+          const { error: insertError } = await supabase
+            .from('payments')
+            .insert([{
+              payment_link_id: link.id,
+              transaction_hash: result.hash,
+              amount_usdc: link.amount_usdc,
+              status: 'confirmed',
+              confirmed_at: new Date().toISOString(),
+              created_at: new Date().toISOString()
+            }]);
+
+          if (insertError) throw insertError;
+
+          // Update payment link status
+          const { error: updateError } = await supabase
+            .from('payment_links')
+            .update({ status: 'paid' })
+            .eq('id', link.id);
+
+          if (updateError) throw updateError;
         }
 
-        let result;
-        if (link.chain === 'Polygon') {
-          result = await checkPolygonUSDCReceived(link.wallet_address, link.amount_usdc);
-        } else if (link.chain === 'TRC20') {
-          result = await checkTRC20USDCReceived(link.wallet_address, link.amount_usdc);
-        } else {
-          return res.status(400).json({ error: 'Unsupported chain' });
-        }
+        return res.json({ data: { confirmed: true, transaction_hash: result.hash } });
+      }
 
-        if (result.found) {
-          // Check for duplicate transaction
-          const existingPayment = await db.get(
-            'SELECT id FROM payments WHERE transaction_hash = ?',
-            result.hash
-          );
-
-          if (!existingPayment) {
-            await withTransaction(async (db) => {
-              // Create payment record
-              await db.run(
-                `INSERT INTO payments (
-                  payment_link_id, transaction_hash, amount_usdc, 
-                  status, confirmed_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)`,
-                [
-                  link.id,
-                  result.hash,
-                  link.amount_usdc,
-                  'confirmed',
-                  new Date().toISOString(),
-                  new Date().toISOString()
-                ]
-              );
-
-              // Update payment link status
-              await db.run(
-                'UPDATE payment_links SET status = ? WHERE id = ?',
-                ['paid', link.id]
-              );
-            });
-          }
-
-          return res.json({ data: { confirmed: true, transaction_hash: result.hash } });
-        }
-
-        res.json({ data: { confirmed: false } });
-      });
+      res.json({ data: { confirmed: false } });
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
+      console.error('Error verifying payment:', err);
+      res.status(500).json({ error: 'Failed to verify payment' });
     }
   });
 
@@ -366,18 +366,18 @@ app.get('/dashboard/:seller_id', authenticateToken, async (req, res) => {
   const { seller_id: paramSellerId } = req.params;
   const { seller_id: tokenSellerId, plan } = req.user;
 
-  // Ensure the authenticated user is only accessing their own dashboard
   if (paramSellerId !== tokenSellerId) {
     return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
   }
 
   try {
-    const db = await initDB();
+    const { data: links, error } = await supabase
+      .from('payment_links')
+      .select('*')
+      .eq('seller_id', paramSellerId)
+      .order('created_at', { ascending: false });
 
-    const links = await db.all(
-      `SELECT * FROM payment_links WHERE seller_id = ? ORDER BY created_at DESC`,
-      paramSellerId
-    );
+    if (error) throw error;
 
     // Base response for all plans
     const dashboardData = links.map(link => ({
@@ -412,7 +412,7 @@ app.get('/dashboard/:seller_id', authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching dashboard:', err);
     res.status(500).json({ error: 'Dashboard fetch error' });
   }
 });
@@ -468,7 +468,7 @@ function getDateRange(period) {
       start.setFullYear(now.getFullYear() - 1);
       break;
     default:
-      start.setDate(now.getDate() - 7); // Default to 7 days
+      start.setDate(now.getDate() - 7);
   }
 
   return {
@@ -481,57 +481,61 @@ function getDateRange(period) {
 app.get('/api/analytics/overview/:seller_id', authenticateToken, async (req, res) => {
   const { seller_id: paramSellerId } = req.params;
   const { seller_id: tokenSellerId } = req.user;
-  // const { period = '7d' } = req.query; // Period is not used in overview
 
-  // Ensure the authenticated user is only accessing their own analytics
   if (paramSellerId !== tokenSellerId) {
     return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
   }
 
   try {
-    await query(async (db) => {
-      // Calculate Total USDC Earned, Total Transactions, Successful Transactions, Average Transaction Value
-      const overviewStats = await db.get(
-        `SELECT 
-           SUM(CASE WHEN p.status = 'confirmed' THEN p.amount_usdc ELSE 0 END) AS totalUsdc,
-           COUNT(p.id) AS totalTransactions,
-           SUM(CASE WHEN p.status = 'confirmed' THEN 1 ELSE 0 END) AS successfulTransactions,
-           AVG(CASE WHEN p.status = 'confirmed' THEN p.amount_usdc ELSE 0 END) AS avgTransaction
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ?`,
-        paramSellerId
-      );
+    // Calculate Total USDC Earned, Total Transactions, Successful Transactions, Average Transaction Value
+    const { data: overviewStats, error: statsError } = await supabase
+      .from('payments')
+      .select(`
+        amount_usdc,
+        status,
+        payment_links!inner(seller_id)
+      `)
+      .eq('payment_links.seller_id', paramSellerId);
 
-       // Get Payment Link Summary (Active/Pending and Total Generated Value)
-       const linkSummary = await db.get(
-         `SELECT 
-            COUNT(id) AS totalLinks,
-            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingLinks,
-            SUM(amount_usdc) AS totalGeneratedValue /* This might need refinement based on if links expire or are one-time use */
-          FROM payment_links
-          WHERE seller_id = ?`,
-         paramSellerId
-       );
+    if (statsError) throw statsError;
 
-      res.json({
-        data: {
-          stats: {
-            totalUsdc: overviewStats.totalUsdc || 0,
-            totalTransactions: overviewStats.totalTransactions || 0,
-            successfulTransactions: overviewStats.successfulTransactions || 0,
-            avgTransaction: overviewStats.avgTransaction || 0
-          },
-          paymentLinkSummary: {
-            totalLinks: linkSummary.totalLinks || 0,
-            activeLinks: linkSummary.pendingLinks || 0, // Assuming 'pending' means active for now
-            totalGeneratedValue: linkSummary.totalGeneratedValue || 0
-          }
+    const totalUsdc = overviewStats
+      .filter(p => p.status === 'confirmed')
+      .reduce((sum, p) => sum + p.amount_usdc, 0);
+
+    const totalTransactions = overviewStats.length;
+    const successfulTransactions = overviewStats.filter(p => p.status === 'confirmed').length;
+    const avgTransaction = successfulTransactions > 0 ? totalUsdc / successfulTransactions : 0;
+
+    // Get Payment Link Summary
+    const { data: links, error: linksError } = await supabase
+      .from('payment_links')
+      .select('*')
+      .eq('seller_id', paramSellerId);
+
+    if (linksError) throw linksError;
+
+    const totalLinks = links.length;
+    const pendingLinks = links.filter(l => l.status === 'pending').length;
+    const totalGeneratedValue = links.reduce((sum, l) => sum + l.amount_usdc, 0);
+
+    res.json({
+      data: {
+        stats: {
+          totalUsdc,
+          totalTransactions,
+          successfulTransactions,
+          avgTransaction
+        },
+        paymentLinkSummary: {
+          totalLinks,
+          activeLinks: pendingLinks,
+          totalGeneratedValue
         }
-      });
+      }
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching analytics overview:', err);
     res.status(500).json({ error: 'Error fetching analytics overview' });
   }
 });
@@ -542,7 +546,6 @@ app.get('/api/analytics/volume/:seller_id', authenticateToken, async (req, res) 
   const { seller_id: tokenSellerId } = req.user;
   const { period = '7d' } = req.query;
 
-  // Ensure the authenticated user is only accessing their own analytics
   if (paramSellerId !== tokenSellerId) {
     return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
   }
@@ -550,52 +553,53 @@ app.get('/api/analytics/volume/:seller_id', authenticateToken, async (req, res) 
   try {
     const { start, end } = getDateRange(period);
 
-    await query(async (db) => {
-      // Fetch confirmed payments within the date range
-      const volumeData = await db.all(
-        `SELECT 
-           SUM(p.amount_usdc) AS totalVolume,
-           STRFTIME('%Y-%m-%d', p.created_at) AS date
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'confirmed' AND p.created_at BETWEEN ? AND ?
-         GROUP BY date
-         ORDER BY date ASC`,
-        paramSellerId, start, end
-      );
+    const { data: volumeData, error } = await supabase
+      .from('payments')
+      .select(`
+        amount_usdc,
+        created_at,
+        payment_links!inner(seller_id)
+      `)
+      .eq('payment_links.seller_id', paramSellerId)
+      .eq('status', 'confirmed')
+      .gte('created_at', start)
+      .lte('created_at', end);
 
-      // Format data for chart.js (fill in missing dates with zero volume)
-      const dateMap = volumeData.reduce((acc, curr) => {
-        acc[curr.date] = curr.totalVolume;
-        return acc;
-      }, {});
+    if (error) throw error;
 
-      const allDates = [];
-      let currentDate = new Date(start);
-      while (currentDate <= new Date(end)) {
-        allDates.push(currentDate.toISOString().split('T')[0]);
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
+    // Group by date and calculate totals
+    const dateMap = volumeData.reduce((acc, curr) => {
+      const date = curr.created_at.split('T')[0];
+      acc[date] = (acc[date] || 0) + curr.amount_usdc;
+      return acc;
+    }, {});
 
-      const labels = allDates;
-      const data = allDates.map(date => dateMap[date] || 0);
+    // Fill in missing dates with zero volume
+    const allDates = [];
+    let currentDate = new Date(start);
+    while (currentDate <= new Date(end)) {
+      allDates.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
 
-      res.json({
-        data: {
-          volume: {
-            labels: labels,
-            data: data
-          }
+    const labels = allDates;
+    const data = allDates.map(date => dateMap[date] || 0);
+
+    res.json({
+      data: {
+        volume: {
+          labels,
+          data
         }
-      });
+      }
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching analytics volume:', err);
     res.status(500).json({ error: 'Error fetching analytics volume' });
   }
 });
 
-// Analytics Distribution Endpoint (Placeholder, as dashboard didn't explicitly show this)
+// Analytics Distribution Endpoint
 app.get('/api/analytics/distribution/:seller_id', authenticateToken, async (req, res) => {
   const { seller_id: paramSellerId } = req.params;
   const { seller_id: tokenSellerId } = req.user;
@@ -605,27 +609,37 @@ app.get('/api/analytics/distribution/:seller_id', authenticateToken, async (req,
   }
 
   try {
-    await query(async (db) => {
-      // Example: Distribution by Chain
-      const distributionData = await db.all(
-        `SELECT 
-           pl.chain,
-           SUM(p.amount_usdc) AS totalVolume
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'confirmed'
-         GROUP BY pl.chain`,
-        paramSellerId
-      );
+    const { data: distributionData, error } = await supabase
+      .from('payments')
+      .select(`
+        amount_usdc,
+        payment_links!inner(
+          seller_id,
+          chain
+        )
+      `)
+      .eq('payment_links.seller_id', paramSellerId)
+      .eq('status', 'confirmed');
 
-      res.json({
-        data: {
-          distribution: distributionData
-        }
-      });
+    if (error) throw error;
+
+    // Group by chain and calculate totals
+    const chainTotals = distributionData.reduce((acc, curr) => {
+      const chain = curr.payment_links.chain;
+      acc[chain] = (acc[chain] || 0) + curr.amount_usdc;
+      return acc;
+    }, {});
+
+    res.json({
+      data: {
+        distribution: Object.entries(chainTotals).map(([chain, totalVolume]) => ({
+          chain,
+          totalVolume
+        }))
+      }
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching analytics distribution:', err);
     res.status(500).json({ error: 'Error fetching analytics distribution' });
   }
 });
@@ -640,28 +654,34 @@ app.get('/api/transactions/:seller_id', authenticateToken, async (req, res) => {
   }
 
   try {
-    await query(async (db) => {
-      const transactions = await db.all(
-        `SELECT 
-           p.transaction_hash,
-           p.amount_usdc,
-           p.created_at,
-           pl.product_title
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ?
-         ORDER BY p.created_at DESC`,
-        paramSellerId
-      );
+    const { data: transactions, error } = await supabase
+      .from('payments')
+      .select(`
+        transaction_hash,
+        amount_usdc,
+        created_at,
+        payment_links!inner(
+          seller_id,
+          product_title
+        )
+      `)
+      .eq('payment_links.seller_id', paramSellerId)
+      .order('created_at', { ascending: false });
 
-      res.json({
-        data: {
-          transactions: transactions
-        }
-      });
+    if (error) throw error;
+
+    res.json({
+      data: {
+        transactions: transactions.map(t => ({
+          transaction_hash: t.transaction_hash,
+          amount_usdc: t.amount_usdc,
+          created_at: t.created_at,
+          product_title: t.payment_links.product_title
+        }))
+      }
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching transactions:', err);
     res.status(500).json({ error: 'Error fetching transactions' });
   }
 });
@@ -676,46 +696,46 @@ app.get('/api/capital/summary/:seller_id', authenticateToken, async (req, res) =
   }
 
   try {
-    await query(async (db) => {
-      // Calculate Total Balance (sum of all confirmed payments)
-      const totalBalanceResult = await db.get(
-        `SELECT SUM(amount_usdc) AS totalBalance
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'confirmed'`,
-        paramSellerId
-      );
+    // Calculate Total Balance
+    const { data: totalBalanceData, error: totalError } = await supabase
+      .from('payments')
+      .select('amount_usdc')
+      .eq('status', 'confirmed')
+      .eq('payment_links.seller_id', paramSellerId);
 
-      // Calculate Incoming Capital (last 30 days)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const incomingCapitalResult = await db.get(
-        `SELECT SUM(p.amount_usdc) AS incomingCapital
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'confirmed' AND p.created_at >= ?`,
-        paramSellerId, thirtyDaysAgo.toISOString()
-      );
+    if (totalError) throw totalError;
 
-      // Outgoing Capital (assuming you have a table/way to track outgoing funds)
-      // Placeholder for now, as there's no explicit 'outgoing' table in db.js
-      const outgoingCapital = 0; // Replace with actual query if applicable
+    const totalBalance = totalBalanceData.reduce((sum, p) => sum + p.amount_usdc, 0);
 
-      res.json({
-        data: {
-          totalBalance: totalBalanceResult.totalBalance || 0,
-          incomingCapital30Days: incomingCapitalResult.incomingCapital || 0,
-          outgoingCapital30Days: outgoingCapital // Placeholder
-        }
-      });
+    // Calculate Incoming Capital (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data: incomingData, error: incomingError } = await supabase
+      .from('payments')
+      .select('amount_usdc')
+      .eq('status', 'confirmed')
+      .eq('payment_links.seller_id', paramSellerId)
+      .gte('created_at', thirtyDaysAgo.toISOString());
+
+    if (incomingError) throw incomingError;
+
+    const incomingCapital = incomingData.reduce((sum, p) => sum + p.amount_usdc, 0);
+
+    res.json({
+      data: {
+        totalBalance,
+        incomingCapital30Days: incomingCapital,
+        outgoingCapital30Days: 0 // Placeholder as there's no outgoing table
+      }
     });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching capital summary:', err);
     res.status(500).json({ error: 'Error fetching capital summary' });
   }
 });
 
-// Get Capital Flow Endpoint (Placeholder - requires more complex time-series aggregation)
+// Get Capital Flow Endpoint
 app.get('/api/capital/flow/:seller_id', authenticateToken, async (req, res) => {
   const { seller_id: paramSellerId } = req.params;
   const { seller_id: tokenSellerId } = req.user;
@@ -728,819 +748,51 @@ app.get('/api/capital/flow/:seller_id', authenticateToken, async (req, res) => {
   try {
     const { start, end } = getDateRange(period);
 
-     // This is a simplified placeholder. Real implementation would need
-     // to aggregate confirmed payments over time and potentially integrate
-     // outgoing transactions if tracked.
+    const { data: flowData, error } = await supabase
+      .from('payments')
+      .select('amount_usdc, created_at')
+      .eq('status', 'confirmed')
+      .eq('payment_links.seller_id', paramSellerId)
+      .gte('created_at', start)
+      .lte('created_at', end);
 
-    const flowData = await query(async (db) => {
-         return db.all(
-             `SELECT 
-                STRFTIME('%Y-%m-%d', p.created_at) AS date,
-                SUM(p.amount_usdc) AS incoming
-              FROM payments p
-              JOIN payment_links pl ON p.payment_link_id = pl.id
-              WHERE pl.seller_id = ? AND p.status = 'confirmed' AND p.created_at BETWEEN ? AND ?
-              GROUP BY date
-              ORDER BY date ASC`,
-             paramSellerId, start, end
-         );
-     });
+    if (error) throw error;
 
-     // Format data for chart.js (placeholder for outgoing)
-     const dateMap = flowData.reduce((acc, curr) => {
-       acc[curr.date] = { incoming: curr.incoming, outgoing: 0 }; // Placeholder outgoing
-       return acc;
-     }, {});
+    // Group by date
+    const dateMap = flowData.reduce((acc, curr) => {
+      const date = curr.created_at.split('T')[0];
+      acc[date] = (acc[date] || 0) + curr.amount_usdc;
+      return acc;
+    }, {});
 
-     const allDates = [];
-     let currentDate = new Date(start);
-     while (currentDate <= new Date(end)) {
-       allDates.push(currentDate.toISOString().split('T')[0]);
-       currentDate.setDate(currentDate.getDate() + 1);
-     }
+    // Fill in missing dates
+    const allDates = [];
+    let currentDate = new Date(start);
+    while (currentDate <= new Date(end)) {
+      allDates.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
 
-     const labels = allDates;
-     const incomingData = allDates.map(date => dateMap[date]?.incoming || 0);
-     const outgoingData = allDates.map(date => dateMap[date]?.outgoing || 0); // Placeholder
+    const labels = allDates;
+    const incoming = allDates.map(date => dateMap[date] || 0);
+    const outgoing = allDates.map(() => 0); // Placeholder for outgoing data
 
-     res.json({
-       data: {
-         flow: {
-           labels: labels,
-           incoming: incomingData,
-           outgoing: outgoingData
-         }
-       }
-     });
-
+    res.json({
+      data: {
+        flow: {
+          labels,
+          incoming,
+          outgoing
+        }
+      }
+    });
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching capital flow:', err);
     res.status(500).json({ error: 'Error fetching capital flow' });
   }
 });
 
-// Get Connected Accounts Endpoint (Assumes an 'accounts' table with seller_id and balance)
-app.get('/api/accounts/:seller_id', authenticateToken, async (req, res) => {
-  const { seller_id: paramSellerId } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  if (paramSellerId !== tokenSellerId) {
-    return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-  }
-
-  try {
-    await query(async (db) => {
-      // This assumes an 'accounts' table exists with seller_id, wallet_address, chain, and balance_usdc
-      // If not, this query will need adjustment based on how accounts are stored.
-      const accounts = await db.all(
-        `SELECT wallet_address, chain, balance_usdc 
-         FROM accounts 
-         WHERE seller_id = ?`,
-        paramSellerId
-      );
-
-      res.json({
-        data: {
-          accounts: accounts
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching connected accounts' });
-  }
-});
-
-// Get Capital by Chain Endpoint
-app.get('/api/capital/by-chain/:seller_id', authenticateToken, async (req, res) => {
-  const { seller_id: paramSellerId } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  if (paramSellerId !== tokenSellerId) {
-    return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-  }
-
-  try {
-    await query(async (db) => {
-      const capitalByChain = await db.all(
-        `SELECT 
-           pl.chain,
-           SUM(p.amount_usdc) AS totalVolume
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'confirmed'
-         GROUP BY pl.chain`,
-        paramSellerId
-      );
-
-      res.json({
-        data: {
-          capitalByChain: capitalByChain
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching capital by chain' });
-  }
-});
-
-// Get Recent Capital Movements Endpoint (Similar to recent transactions, but might include outgoing if tracked)
-app.get('/api/capital/recent-movements/:seller_id', authenticateToken, async (req, res) => {
-  const { seller_id: paramSellerId } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  if (paramSellerId !== tokenSellerId) {
-    return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-  }
-
-  try {
-    await query(async (db) => {
-      // Fetch recent confirmed payments
-      const recentMovements = await db.all(
-        `SELECT 
-           p.transaction_hash,
-           p.amount_usdc,
-           p.created_at,
-           pl.product_title
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'confirmed'
-         ORDER BY p.created_at DESC
-         LIMIT 10`,
-        paramSellerId
-      );
-
-      res.json({
-        data: {
-          recentMovements: recentMovements
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching recent capital movements' });
-  }
-});
-
-// Get Specific Account Summary Endpoint (Requires an account ID)
-app.get('/api/accounts/:account_id/summary', authenticateToken, async (req, res) => {
-  const { account_id } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  try {
-    await query(async (db) => {
-       // Verify the account belongs to the authenticated seller
-       const account = await db.get(
-         `SELECT wallet_address, chain, balance_usdc
-          FROM accounts
-          WHERE id = ? AND seller_id = ?`,
-         account_id, tokenSellerId
-       );
-
-       if (!account) {
-         return res.status(404).json({ error: 'Account not found or does not belong to seller' });
-       }
-
-       // Assuming 'status' is derived or stored elsewhere, for now a placeholder
-       const status = 'Active'; // Placeholder
-
-       res.json({
-         data: {
-           walletAddress: account.wallet_address,
-           chain: account.chain,
-           balance: account.balance_usdc || 0,
-           status: status
-         }
-       });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching account summary' });
-  }
-});
-
-// Get Recent Activity for Specific Account Endpoint
-app.get('/api/accounts/:account_id/activity', authenticateToken, async (req, res) => {
-  const { account_id } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  try {
-    await query(async (db) => {
-      // Verify the account belongs to the authenticated seller
-      const account = await db.get(
-        `SELECT id FROM accounts WHERE id = ? AND seller_id = ?`,
-        account_id, tokenSellerId
-      );
-
-      if (!account) {
-        return res.status(404).json({ error: 'Account not found or does not belong to seller' });
-      }
-
-      // Fetch payments associated with this account's wallet address
-      // This is a simplified approach; a more robust solution might track
-      // all related transactions (incoming/outgoing) directly linked to the account ID.
-      const recentActivity = await db.all(
-        `SELECT 
-           p.transaction_hash,
-           p.amount_usdc,
-           p.created_at,
-           pl.product_title
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.wallet_address = (SELECT wallet_address FROM accounts WHERE id = ?) AND pl.seller_id = ?
-         ORDER BY p.created_at DESC
-         LIMIT 10`,
-        account_id, tokenSellerId
-      );
-
-      // Format activity - assuming all found are incoming payments for simplicity
-      const formattedActivity = recentActivity.map(activity => ({
-        type: 'received', // Simplified: assuming all are received payments for this example
-        description: activity.product_title || 'Payment Received',
-        amount_usdc: activity.amount_usdc,
-        date: new Date(activity.created_at).toLocaleDateString(),
-        transaction_hash: activity.transaction_hash
-      }));
-
-      res.json({
-        data: {
-          activity: formattedActivity
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching account activity' });
-  }
-});
-
-// Get Connected Payment Links for Specific Account Endpoint
-app.get('/api/accounts/:account_id/payment-links', authenticateToken, async (req, res) => {
-  const { account_id } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  try {
-    await query(async (db) => {
-      // Verify the account belongs to the authenticated seller
-      const account = await db.get(
-        `SELECT id FROM accounts WHERE id = ? AND seller_id = ?`,
-        account_id, tokenSellerId
-      );
-
-      if (!account) {
-        return res.status(404).json({ error: 'Account not found or does not belong to seller' });
-      }
-
-      // Fetch payment links created using this account's wallet address
-      const connectedPaymentLinks = await db.all(
-        `SELECT 
-           link_id,
-           amount_usdc,
-           product_title,
-           status
-         FROM payment_links
-         WHERE wallet_address = (SELECT wallet_address FROM accounts WHERE id = ?) AND seller_id = ?
-         ORDER BY created_at DESC
-         LIMIT 10`,
-        account_id, tokenSellerId
-      );
-
-      res.json({
-        data: {
-          paymentLinks: connectedPaymentLinks
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching connected payment links' });
-  }
-});
-
-// Get Most Used Wallet Addresses for Seller Endpoint
-app.get('/api/accounts/:seller_id/most-used-wallets', authenticateToken, async (req, res) => {
-  const { seller_id: paramSellerId } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  if (paramSellerId !== tokenSellerId) {
-    return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-  }
-
-  try {
-    await query(async (db) => {
-      // This query counts how many payment links were created to each unique wallet address by the seller.
-      // A more advanced query could analyze transaction history for wallets interacted with.
-      const mostUsedWallets = await db.all(
-        `SELECT 
-           wallet_address,
-           chain,
-           COUNT(id) AS count
-         FROM payment_links
-         WHERE seller_id = ?
-         GROUP BY wallet_address, chain
-         ORDER BY count DESC
-         LIMIT 5`,
-        paramSellerId
-      );
-
-      res.json({
-        data: {
-          mostUsedWallets: mostUsedWallets
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching most used wallets' });
-  }
-});
-
-// Get Seller's Email Address Endpoint
-app.get('/api/users/:seller_id/email', authenticateToken, async (req, res) => {
-  const { seller_id: paramSellerId } = req.params;
-  const { seller_id: tokenSellerId, email } = req.user; // Email is already in token
-
-  // Ensure the authenticated user is only accessing their own email
-  if (paramSellerId !== tokenSellerId) {
-    return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-  }
-
-  // Email is available directly from the authenticated user object
-  res.json({
-    data: {
-      email: email
-    }
-  });
-});
-
-// Get Seller's Favorite Network Endpoint (Based on the chain used most in payment links)
-// app.get('/api/accounts/:seller_id/favorite-network', authenticateToken, async (req, res) => {
-//   const { seller_id: paramSellerId } = req.params;
-//   const { seller_id: tokenSellerId } = req.user;
-//
-//   if (paramSellerId !== tokenSellerId) {
-//     return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-//   }
-//
-//   try {
-//     await query(async (db) => {
-//       const favoriteNetwork = await db.get(
-//         `SELECT chain, COUNT(id) AS count
-//          FROM payment_links
-//          WHERE seller_id = ?
-//          GROUP BY chain
-//          ORDER BY count DESC
-//          LIMIT 1`,
-//         paramSellerId
-//       );
-//
-//       res.json({
-//         data: {
-//           favoriteNetwork: favoriteNetwork ? favoriteNetwork.chain : 'N/A'
-//         }
-//       });
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: 'Error fetching favorite network' });
-//   }
-// });
-
-// Get Capital Distribution Endpoint
-app.get('/api/capital/:seller_id/distribution', authenticateToken, async (req, res) => {
-  const { seller_id: paramSellerId } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  if (paramSellerId !== tokenSellerId) {
-    return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-  }
-
-  try {
-    await query(async (db) => {
-      // Get available balance (confirmed payments)
-      const availableBalance = await db.get(
-        `SELECT SUM(p.amount_usdc) AS total
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'confirmed'`,
-        paramSellerId
-      );
-
-      // Get in transit balance (pending payments)
-      const inTransit = await db.get(
-        `SELECT SUM(p.amount_usdc) AS total
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'pending'`,
-        paramSellerId
-      );
-
-      // Get reserved balance (reserved for future use)
-      const reserved = await db.get(
-        `SELECT SUM(p.amount_usdc) AS total
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? AND p.status = 'reserved'`,
-        paramSellerId
-      );
-
-      res.json({
-        success: true,
-        data: {
-          available: availableBalance.total || 0,
-          in_transit: inTransit.total || 0,
-          reserved: reserved.total || 0
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching capital distribution' });
-  }
-});
-
-// Get Capital Trends Endpoint
-app.get('/api/capital/:seller_id/trends', authenticateToken, async (req, res) => {
-  const { seller_id: paramSellerId } = req.params;
-  const { seller_id: tokenSellerId } = req.user;
-
-  if (paramSellerId !== tokenSellerId) {
-    return res.status(403).json({ error: 'Access denied: seller ID mismatch' });
-  }
-
-  try {
-    await query(async (db) => {
-      // Get last 6 months of data
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-      // Get incoming trends
-      const incomingTrends = await db.all(
-        `SELECT 
-           STRFTIME('%Y-%m', p.created_at) AS month,
-           SUM(p.amount_usdc) AS total
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? 
-         AND p.status = 'confirmed'
-         AND p.created_at >= ?
-         GROUP BY month
-         ORDER BY month ASC`,
-        paramSellerId, sixMonthsAgo.toISOString()
-      );
-
-      // Get outgoing trends (if you have outgoing transactions)
-      const outgoingTrends = await db.all(
-        `SELECT 
-           STRFTIME('%Y-%m', p.created_at) AS month,
-           SUM(p.amount_usdc) AS total
-         FROM payments p
-         JOIN payment_links pl ON p.payment_link_id = pl.id
-         WHERE pl.seller_id = ? 
-         AND p.status = 'sent'
-         AND p.created_at >= ?
-         GROUP BY month
-         ORDER BY month ASC`,
-        paramSellerId, sixMonthsAgo.toISOString()
-      );
-
-      // Format months for labels
-      const months = incomingTrends.map(trend => {
-        const [year, month] = trend.month.split('-');
-        return new Date(year, month - 1).toLocaleString('default', { month: 'short' });
-      });
-
-      // Format data for charts
-      const incomingData = incomingTrends.map(trend => trend.total || 0);
-      const outgoingData = outgoingTrends.map(trend => trend.total || 0);
-
-      res.json({
-        success: true,
-        data: {
-          labels: months,
-          incoming: incomingData,
-          outgoing: outgoingData
-        }
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching capital trends' });
-  }
-});
-
-// Account insights endpoints
-app.get('/api/account/:sellerId/insights',
-  authenticateToken,
-  async (req, res) => {
-    const { sellerId } = req.params;
-
-    try {
-      await query(async (db) => {
-        const insights = await db.get(
-          `SELECT * FROM account_insights WHERE seller_id = ?`,
-          sellerId
-        );
-
-        if (!insights) {
-          // Calculate initial insights if not exists
-          const accountAge = await db.get(
-            `SELECT julianday('now') - julianday(created_at) as age_days 
-             FROM users WHERE id = ?`,
-            sellerId
-          );
-
-          const activityCount = await db.get(
-            `SELECT COUNT(*) as count FROM user_activity WHERE seller_id = ?`,
-            sellerId
-          );
-
-          const securityScore = await calculateSecurityScore(db, sellerId);
-
-          const activityLevel = activityCount.count > 10 ? 'high' : 
-                              activityCount.count > 5 ? 'medium' : 'low';
-
-          await db.run(
-            `INSERT INTO account_insights (
-              seller_id, security_score, activity_level, 
-              account_age_days, verification_status
-            ) VALUES (?, ?, ?, ?, ?)`,
-            [
-              sellerId,
-              securityScore,
-              activityLevel,
-              Math.floor(accountAge.age_days),
-              'verified'
-            ]
-          );
-
-          return res.json({
-            data: {
-              security_score: securityScore,
-              activity_level: activityLevel,
-              account_age_days: Math.floor(accountAge.age_days),
-              verification_status: 'verified'
-            }
-          });
-        }
-
-        res.json({ data: insights });
-      });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
-    }
-  }
-);
-
-// FAQ endpoints
-app.get('/api/faqs',
-  async (req, res) => {
-    const { category } = req.query;
-
-    try {
-      await query(async (db) => {
-        const faqs = await db.all(
-          `SELECT * FROM faqs 
-           ${category ? 'WHERE category = ?' : ''}
-           ORDER BY priority DESC, created_at DESC`,
-          category ? [category] : []
-        );
-
-        res.json({ data: faqs });
-      });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
-    }
-  }
-);
-
-// User activity endpoints
-app.get('/api/account/:sellerId/activity',
-  authenticateToken,
-  async (req, res) => {
-    const { sellerId } = req.params;
-    const { limit = 10, offset = 0 } = req.query;
-
-    try {
-      await query(async (db) => {
-        const activities = await db.all(
-          `SELECT * FROM user_activity 
-           WHERE seller_id = ?
-           ORDER BY created_at DESC
-           LIMIT ? OFFSET ?`,
-          [sellerId, limit, offset]
-        );
-
-        const total = await db.get(
-          `SELECT COUNT(*) as count FROM user_activity WHERE seller_id = ?`,
-          sellerId
-        );
-
-        res.json({
-          data: activities,
-          meta: {
-            total: total.count,
-            limit: parseInt(limit),
-            offset: parseInt(offset)
-          }
-        });
-      });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
-    }
-  }
-);
-
-// Security events endpoints
-app.get('/api/account/:sellerId/security-events',
-  authenticateToken,
-  async (req, res) => {
-    const { sellerId } = req.params;
-    const { severity } = req.query;
-
-    try {
-      await query(async (db) => {
-        const events = await db.all(
-          `SELECT * FROM security_events 
-           WHERE seller_id = ?
-           ${severity ? 'AND severity = ?' : ''}
-           ORDER BY created_at DESC`,
-          severity ? [sellerId, severity] : [sellerId]
-        );
-
-        res.json({ data: events });
-      });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
-    }
-  }
-);
-
-// Helper function to calculate security score
-async function calculateSecurityScore(db, sellerId) {
-  const user = await db.get('SELECT * FROM users WHERE id = ?', sellerId);
-  let score = 0;
-
-  // Email verification
-  if (user.is_email_verified) score += 20;
-
-  // 2FA (if implemented)
-  // if (user.has_2fa) score += 30;
-
-  // Account age
-  const accountAge = await db.get(
-    `SELECT julianday('now') - julianday(created_at) as age_days 
-     FROM users WHERE id = ?`,
-    sellerId
-  );
-  if (accountAge.age_days > 30) score += 20;
-  else if (accountAge.age_days > 7) score += 10;
-
-  // Activity level
-  const activityCount = await db.get(
-    `SELECT COUNT(*) as count FROM user_activity WHERE seller_id = ?`,
-    sellerId
-  );
-  if (activityCount.count > 10) score += 20;
-  else if (activityCount.count > 5) score += 10;
-
-  // Security events
-  const securityEvents = await db.get(
-    `SELECT COUNT(*) as count FROM security_events 
-     WHERE seller_id = ? AND severity = 'high'`,
-    sellerId
-  );
-  score -= securityEvents.count * 10;
-
-  return Math.max(0, Math.min(100, score));
-}
-
-// Unsubscribe from current plan
-app.post('/api/subscription/:sellerId/unsubscribe', authenticateToken, async (req, res) => {
-  const { sellerId } = req.params;
-  const { email } = req.user;
-
-  try {
-    await query(async (db) => {
-      // Get current subscription
-      const subscription = await db.get(`
-        SELECT stripe_subscription_id, plan_name, status
-        FROM subscriptions
-        WHERE seller_id = ? AND status = 'active'
-      `, sellerId);
-
-      if (!subscription) {
-        return res.status(404).json({
-          success: false,
-          message: 'No active subscription found'
-        });
-      }
-
-      // Only allow unsubscribing from paid plans
-      if (subscription.plan_name.toLowerCase() === 'basic') {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot unsubscribe from the basic plan'
-        });
-      }
-
-      // Cancel the subscription at period end
-      const stripeSubscription = await stripe.subscriptions.update(
-        subscription.stripe_subscription_id,
-        { cancel_at_period_end: true }
-      );
-
-      // Update subscription in database
-      await db.run(`
-        UPDATE subscriptions
-        SET cancel_at_period_end = 1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE seller_id = ?
-      `, sellerId);
-
-      // Log the action
-      await db.run(`
-        INSERT INTO subscription_logs (seller_id, action, details)
-        VALUES (?, 'unsubscribe', ?)
-      `, sellerId, JSON.stringify({
-        plan: subscription.plan_name,
-        cancel_at: stripeSubscription.cancel_at,
-        current_period_end: stripeSubscription.current_period_end
-      }));
-
-      res.json({
-        success: true,
-        message: 'Successfully unsubscribed',
-        data: {
-          cancel_at: stripeSubscription.cancel_at,
-          current_period_end: stripeSubscription.current_period_end
-        }
-      });
-    });
-  } catch (error) {
-    console.error('Error unsubscribing:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to unsubscribe'
-    });
-  }
-});
-
-// Save buyer information before payment
-app.post('/api/payment-links/:linkId/buyer', async (req, res) => {
-    const { linkId } = req.params;
-    const buyerDetails = req.body;
-
-    try {
-        await query(async (db) => {
-            // Verify the payment link exists and is active
-            const paymentLink = await db.get(`
-                SELECT id, status
-                FROM payment_links
-                WHERE id = ? AND status = 'active'
-            `, linkId);
-
-            if (!paymentLink) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Payment link not found or inactive'
-                });
-            }
-
-            // Save buyer details
-            await db.run(`
-                UPDATE payment_links
-                SET buyer_name = ?,
-                    buyer_email = ?,
-                    buyer_address = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `, 
-            buyerDetails.name,
-            buyerDetails.email,
-            JSON.stringify(buyerDetails.address),
-            linkId
-            );
-
-            res.json({
-                success: true,
-                message: 'Buyer details saved successfully'
-            });
-        });
-    } catch (error) {
-        console.error('Error saving buyer details:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to save buyer details'
-        });
-    }
-});
-
+// Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });

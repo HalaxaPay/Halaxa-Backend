@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import { initDB } from './db.js';
 import authRoutes from './routes/auth.js';
 import paymentRoutes from './routes/payment.js';
 import accountRoutes from './routes/account.js';
@@ -10,17 +10,16 @@ import faqRoutes from './routes/faq.js';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// Initialize database
-initDB().catch(error => {
-  console.error('Failed to initialize database:', error);
-  process.exit(1);
-});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -40,6 +39,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 }); 

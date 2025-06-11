@@ -2,7 +2,7 @@ import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
-import { query } from './db.js';
+import { supabase } from './supabase.js';
 
 // Email validation regex
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -71,14 +71,18 @@ export const generateEmailVerificationToken = async (userId, email) => {
   const token = generateSecureToken();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-  await query(async (db) => {
-    await db.run(
-      `INSERT INTO email_verification_tokens (user_id, token, email, expires_at)
-       VALUES (?, ?, ?, ?)`,
-      [userId, token, email, expiresAt.toISOString()]
-    );
-  });
+  const { error } = await supabase
+    .from('email_verification_tokens')
+    .insert([
+      {
+        user_id: userId,
+        token: token,
+        email: email,
+        expires_at: expiresAt.toISOString()
+      }
+    ]);
 
+  if (error) throw error;
   return token;
 };
 
@@ -87,14 +91,17 @@ export const generatePasswordResetToken = async (userId) => {
   const token = generateSecureToken();
   const expiresAt = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour
 
-  await query(async (db) => {
-    await db.run(
-      `INSERT INTO password_reset_tokens (user_id, token, expires_at)
-       VALUES (?, ?, ?)`,
-      [userId, token, expiresAt.toISOString()]
-    );
-  });
+  const { error } = await supabase
+    .from('password_reset_tokens')
+    .insert([
+      {
+        user_id: userId,
+        token: token,
+        expires_at: expiresAt.toISOString()
+      }
+    ]);
 
+  if (error) throw error;
   return token;
 };
 
