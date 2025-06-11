@@ -1,286 +1,251 @@
-import dotenv from 'dotenv';
-dotenv.config();
-
 import express from 'express';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { query, withTransaction } from './db.js';
-import {
-  authLimiter,
-  signupLimiter,
-  validateEmail,
-  validatePassword,
-  validateRequest,
-  generateSecureToken,
-  generateEmailVerificationToken,
-  generatePasswordResetToken,
-  sendVerificationEmail,
-  sendPasswordResetEmail
-} from './security.js';
+import { query, withTransaction } from '../db.js';
+import { sendVerificationEmail, sendPasswordResetEmail } from '../services/email.js';
+import crypto from 'crypto';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET;
-const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET;
 
-// Signup route with validation and rate limiting
-router.post('/signup',
-  signupLimiter,
-  authLimiter,
-  validateEmail,
-  validatePassword,
-  validateRequest,
-  async (req, res) => {
-    const { email, password } = req.body;
-
-    try {
-      await query(async (db) => {
-        const existingUser = await db.get('SELECT id FROM users WHERE email = ?', email);
-        if (existingUser) {
-          return res.status(409).json({ error: 'Email already in use' });
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const seller_id = 'halaxa_' + generateSecureToken(9);
-
-        await withTransaction(async (db) => {
-          // Create user
-          const result = await db.run(
-            `INSERT INTO users (
-              email, hashed_password, plan, created_at, is_email_verified
-            ) VALUES (?, ?, ?, ?, ?)`,
-            [email, hashedPassword, 'basic', new Date().toISOString(), false]
-          );
-
-          // Generate and store verification token
-          const verificationToken = await generateEmailVerificationToken(result.lastID, email);
-          await sendVerificationEmail(email, verificationToken);
-        });
-
-        return res.status(201).json({
-          data: {
-            message: 'User created. Please check your email for verification.',
-            seller_id
-          }
-        });
-      });
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-);
-
-// Login route with rate limiting
-router.post('/login',
-  authLimiter,
-  validateEmail,
-  validateRequest,
-  async (req, res) => {
-    const { email, password } = req.body;
-
-    try {
-      await query(async (db) => {
-        const user = await db.get('SELECT * FROM users WHERE email = ?', email);
-
-        if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
-        const passwordMatch = await bcrypt.compare(password, user.hashed_password);
-        if (!passwordMatch) return res.status(401).json({ error: 'Invalid credentials' });
-
-        if (!user.is_email_verified) {
-          return res.status(403).json({ error: 'Please verify your email first' });
-        }
-
-        // Generate access token
-        const accessToken = jwt.sign(
-          { 
-            id: user.id, 
-            seller_id: user.id, 
-            email: user.email, 
-            plan: user.plan 
-          },
-          JWT_SECRET,
-          { expiresIn: '15m' }
-        );
-
-        // Generate refresh token
-        const refreshToken = generateSecureToken();
-        const refreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-
-        await db.run(
-          `INSERT INTO refresh_tokens (user_id, token, expires_at)
-           VALUES (?, ?, ?)`,
-          [user.id, refreshToken, refreshTokenExpiry.toISOString()]
-        );
-
-        // Update last login
-        await db.run(
-          'UPDATE users SET last_login_at = ? WHERE id = ?',
-          [new Date().toISOString(), user.id]
-        );
-
-        res.json({
-          data: {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            seller_id: user.id,
-            plan: user.plan
-          }
-        });
-      });
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-);
-
-// Refresh token route
-router.post('/refresh-token', async (req, res) => {
-  const { refresh_token } = req.body;
-
-  if (!refresh_token) {
-    return res.status(400).json({ error: 'Refresh token is required' });
-  }
-
+// Register new user
+router.post('/register', async (req, res) => {
   try {
-    await query(async (db) => {
-      const tokenRecord = await db.get(
-        `SELECT rt.*, u.email, u.plan 
-         FROM refresh_tokens rt
-         JOIN users u ON rt.user_id = u.id
-         WHERE rt.token = ? AND rt.expires_at > ?`,
-        [refresh_token, new Date().toISOString()]
-      );
+    const { email, password } = req.body;
 
-      if (!tokenRecord) {
-        return res.status(401).json({ error: 'Invalid or expired refresh token' });
-      }
-
-      // Generate new access token
-      const accessToken = jwt.sign(
-        {
-          id: tokenRecord.user_id,
-          seller_id: tokenRecord.user_id,
-          email: tokenRecord.email,
-          plan: tokenRecord.plan
-        },
-        JWT_SECRET,
-        { expiresIn: '15m' }
-      );
-
-      res.json({ data: { access_token: accessToken } });
+    // Check if user already exists
+    const { data: existingUser, error: checkError } = await query(async (supabase) => {
+      return await supabase.from('users').select('*').eq('email', email).single();
     });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Internal server error' });
+
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    // Create new user
+    const { data: newUser, error: createError } = await query(async (supabase) => {
+      return await supabase.from('users').insert([{
+        email,
+        hashed_password: hashedPassword,
+        verification_token: verificationToken,
+        is_email_verified: false
+      }]).select().single();
+    });
+
+    if (createError) throw createError;
+
+    // Send verification email
+    await sendVerificationEmail(email, verificationToken);
+
+    res.status(201).json({ message: 'Registration successful. Please check your email to verify your account.' });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
-// Email verification route
-router.get('/verify-email/:token', async (req, res) => {
-  const { token } = req.params;
-
+// Login
+router.post('/login', async (req, res) => {
   try {
-    await query(async (db) => {
-      const verificationRecord = await db.get(
-        `SELECT * FROM email_verification_tokens 
-         WHERE token = ? AND expires_at > ?`,
-        [token, new Date().toISOString()]
-      );
+    const { email, password } = req.body;
 
-      if (!verificationRecord) {
-        return res.status(400).json({ error: 'Invalid or expired verification token' });
-      }
-
-      await withTransaction(async (db) => {
-        // Mark email as verified
-        await db.run(
-          'UPDATE users SET is_email_verified = ? WHERE id = ?',
-          [true, verificationRecord.user_id]
-        );
-
-        // Delete used token
-        await db.run('DELETE FROM email_verification_tokens WHERE token = ?', [token]);
-      });
-
-      res.json({ data: { message: 'Email verified successfully' } });
+    // Get user
+    const { data: user, error: userError } = await query(async (supabase) => {
+      return await supabase.from('users').select('*').eq('email', email).single();
     });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Internal server error' });
+
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Verify password
+    const validPassword = await bcrypt.compare(password, user.hashed_password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Generate tokens
+    const accessToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    const refreshToken = jwt.sign({ userId: user.id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+
+    // Update user's refresh token and last login
+    const { error: updateError } = await query(async (supabase) => {
+      return await supabase.from('users')
+        .update({ 
+          refresh_token: refreshToken,
+          last_login_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+    });
+
+    if (updateError) throw updateError;
+
+    res.json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        plan: user.plan,
+        isEmailVerified: user.is_email_verified
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Verify email
+router.get('/verify-email/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    // Find user with this verification token
+    const { data: user, error: userError } = await query(async (supabase) => {
+      return await supabase.from('users')
+        .select('*')
+        .eq('verification_token', token)
+        .single();
+    });
+
+    if (userError || !user) {
+      return res.status(400).json({ error: 'Invalid verification token' });
+    }
+
+    // Update user's email verification status
+    const { error: updateError } = await query(async (supabase) => {
+      return await supabase.from('users')
+        .update({ 
+          is_email_verified: true,
+          verification_token: null
+        })
+        .eq('id', user.id);
+    });
+
+    if (updateError) throw updateError;
+
+    res.json({ message: 'Email verified successfully' });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({ error: 'Email verification failed' });
   }
 });
 
 // Request password reset
-router.post('/request-password-reset',
-  validateEmail,
-  validateRequest,
-  async (req, res) => {
+router.post('/forgot-password', async (req, res) => {
+  try {
     const { email } = req.body;
 
-    try {
-      await query(async (db) => {
-        const user = await db.get('SELECT id FROM users WHERE email = ?', email);
-        if (!user) {
-          // Don't reveal if email exists
-          return res.json({ data: { message: 'If your email is registered, you will receive a password reset link' } });
-        }
+    // Find user
+    const { data: user, error: userError } = await query(async (supabase) => {
+      return await supabase.from('users').select('*').eq('email', email).single();
+    });
 
-        const resetToken = await generatePasswordResetToken(user.id);
-        await sendPasswordResetEmail(email, resetToken);
-
-        res.json({ data: { message: 'If your email is registered, you will receive a password reset link' } });
-      });
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({ error: 'Internal server error' });
+    if (userError || !user) {
+      return res.status(404).json({ error: 'User not found' });
     }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000); // 1 hour from now
+
+    // Store reset token
+    const { error: tokenError } = await query(async (supabase) => {
+      return await supabase.from('password_reset_tokens').insert([{
+        user_id: user.id,
+        token: resetToken,
+        expires_at: expiresAt.toISOString()
+      }]);
+    });
+
+    if (tokenError) throw tokenError;
+
+    // Send reset email
+    await sendPasswordResetEmail(email, resetToken);
+
+    res.json({ message: 'Password reset instructions sent to your email' });
+  } catch (error) {
+    console.error('Password reset request error:', error);
+    res.status(500).json({ error: 'Failed to process password reset request' });
   }
-);
+});
 
 // Reset password
-router.post('/reset-password',
-  validatePassword,
-  validateRequest,
-  async (req, res) => {
-    const { token, new_password } = req.body;
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
 
-    try {
-      await query(async (db) => {
-        const resetRecord = await db.get(
-          `SELECT * FROM password_reset_tokens 
-           WHERE token = ? AND expires_at > ?`,
-          [token, new Date().toISOString()]
-        );
+    // Find valid reset token
+    const { data: resetToken, error: tokenError } = await query(async (supabase) => {
+      return await supabase.from('password_reset_tokens')
+        .select('*')
+        .eq('token', token)
+        .gt('expires_at', new Date().toISOString())
+        .single();
+    });
 
-        if (!resetRecord) {
-          return res.status(400).json({ error: 'Invalid or expired reset token' });
-        }
-
-        const hashedPassword = await bcrypt.hash(new_password, 10);
-
-        await withTransaction(async (db) => {
-          // Update password
-          await db.run(
-            'UPDATE users SET hashed_password = ? WHERE id = ?',
-            [hashedPassword, resetRecord.user_id]
-          );
-
-          // Delete used token
-          await db.run('DELETE FROM password_reset_tokens WHERE token = ?', [token]);
-
-          // Invalidate all refresh tokens
-          await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', [resetRecord.user_id]);
-        });
-
-        res.json({ data: { message: 'Password reset successfully' } });
-      });
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({ error: 'Internal server error' });
+    if (tokenError || !resetToken) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
     }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password and delete reset token
+    const { error: updateError } = await withTransaction(async (supabase) => {
+      // Update password
+      await supabase.from('users')
+        .update({ hashed_password: hashedPassword })
+        .eq('id', resetToken.user_id);
+
+      // Delete reset token
+      await supabase.from('password_reset_tokens')
+        .delete()
+        .eq('token', token);
+    });
+
+    if (updateError) throw updateError;
+
+    res.json({ message: 'Password reset successful' });
+  } catch (error) {
+    console.error('Password reset error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
   }
-);
+});
+
+// Refresh token
+router.post('/refresh-token', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+    // Get user
+    const { data: user, error: userError } = await query(async (supabase) => {
+      return await supabase.from('users')
+        .select('*')
+        .eq('id', decoded.userId)
+        .eq('refresh_token', refreshToken)
+        .single();
+    });
+
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Invalid refresh token' });
+    }
+
+    // Generate new access token
+    const accessToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    res.json({ accessToken });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(401).json({ error: 'Invalid refresh token' });
+  }
+});
 
 export default router; 

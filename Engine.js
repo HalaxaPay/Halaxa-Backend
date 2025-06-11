@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import csrf from 'csurf';
 import cookieParser from 'cookie-parser';
 import { authenticateToken } from './authMiddleware.js';
-import { initDB, query, withTransaction } from './db.js';
+import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -13,8 +13,13 @@ import { validateRequest } from './security.js';
 import stripe from './Stripe.js';
 dotenv.config();
 
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Security middleware
 app.use(helmet()); // Adds various HTTP headers for security
@@ -1539,12 +1544,3 @@ app.post('/api/payment-links/:linkId/buyer', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-// Ensure the database is initialized when the server starts
-initDB().catch(err => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
-});
-
-// Export initDB for potential external use (e.g., testing)
-export { initDB };
