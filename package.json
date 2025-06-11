@@ -1,0 +1,31 @@
+{
+  "name": "halaxa-backend",
+  "version": "1.0.0",
+  "description": "Backend server for Halaxa application",
+  "main": "Engine.js",
+  "scripts": {
+    "start": "node Engine.js",
+    "dev": "nodemon Engine.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
+    "mongoose": "^7.0.3",
+    "stripe": "^12.0.0",
+    "nodemailer": "^6.9.1",
+    "express-rate-limit": "^6.7.0",
+    "helmet": "^6.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "author": "",
+  "license": "ISC"
+} 
