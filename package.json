@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Backend server for Halaxa application",
-  "main": "Engine.js",
+  "main": "Main Backend/server.js",
   "scripts": {
-    "start": "node Engine.js",
+    "start": "node Main Backend/server.js",
     "dev": "nodemon Engine.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
