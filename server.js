@@ -31,6 +31,12 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// TEMPORARY CATCH-ALL ROUTE FOR DEBUGGING - MUST BE AT THE TOP
+app.all('*', (req, res, next) => {
+    console.log(`Received request: ${req.method} ${req.originalUrl}`);
+    next(); // Pass control to the next middleware/route handler
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/payment', paymentRoutes);
