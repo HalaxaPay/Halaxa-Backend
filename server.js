@@ -19,22 +19,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // CORS configuration
 const corsOptions = {
-    origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        
-        // Allow our specific Framer domain, with or without trailing slash
-        if (
-            origin === 'https://halaxaa.framer.website' ||
-            origin === 'https://halaxaa.framer.website/' ||
-            origin.startsWith('http://localhost') ||
-            origin.startsWith('http://127.0.0.1')
-        ) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
+    origin: '*', // Temporarily allow all origins for testing
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
     credentials: true,
