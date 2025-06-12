@@ -5,7 +5,7 @@
   "description": "Backend server for Halaxa application",
   "main": "Main Backend/server.js",
   "scripts": {
-    "start": "node Main Backend/server.js",
+    "start": "cd Main Backend && node server.js",
     "dev": "nodemon Engine.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
