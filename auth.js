@@ -1,9 +1,8 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { supabase } from '../supabase.js';
-import { validateEmail, validatePassword, validateRequest } from '../security.js';
-import { sendVerificationEmail, sendPasswordResetEmail } from '../services/email.js';
+import { supabase } from './supabase.js';
+import { validateEmail, validatePassword, validateRequest } from './security.js';
 import crypto from 'crypto';
 
 const router = express.Router();
