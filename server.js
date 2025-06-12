@@ -3,12 +3,12 @@ import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import authRoutes from './Main Backend/auth.js';
-import paymentRoutes from './Main Backend/payment.js';
-import accountRoutes from './Main Backend/account.js';
-import faqRoutes from './Main Backend/faq.js';
-import { supabase } from './Main Backend/supabase.js';
-import { validateEmail, validatePassword, validateRequest } from './Main Backend/security.js';
+import authRoutes from './auth.js';
+import paymentRoutes from './payment.js';
+import accountRoutes from './account.js';
+import faqRoutes from './faq.js';
+import { supabase } from './supabase.js';
+import { validateEmail, validatePassword, validateRequest } from './security.js';
 
 dotenv.config();
 
