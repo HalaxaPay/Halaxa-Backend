@@ -51,9 +51,10 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
 
     if (createError) {
       console.error('Error creating user:', createError);
-      return res.status(500).json({ 
+      console.error('Supabase INSERT failed with message:', createError.message, 'Details:', createError.details);
+      return res.status(500).json({
         error: 'Failed to create user',
-        details: createError.message 
+        details: createError.message
       });
     }
 
