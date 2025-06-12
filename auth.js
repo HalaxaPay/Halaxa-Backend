@@ -10,7 +10,16 @@ const router = express.Router();
 // Register endpoint
 router.post('/register', validateEmail, validatePassword, validateRequest, async (req, res) => {
   try {
-    const { email, password, first_name, last_name } = req.body;
+    const { email, password, fullName } = req.body;
+
+    let first_name = null;
+    let last_name = null;
+
+    if (fullName) {
+      const nameParts = fullName.split(' ');
+      first_name = nameParts[0] || null;
+      last_name = nameParts.slice(1).join(' ') || null;
+    }
 
     // Check if user already exists
     const { data: existingUser, error: checkError } = await supabase
