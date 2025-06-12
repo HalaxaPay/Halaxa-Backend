@@ -19,7 +19,22 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // CORS configuration
 const corsOptions = {
-    origin: ['https://halaxaa.framer.website', 'http://localhost:3000'],
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        // Allow our specific Framer domain, with or without trailing slash
+        if (
+            origin === 'https://halaxaa.framer.website' ||
+            origin === 'https://halaxaa.framer.website/' ||
+            origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1')
+        ) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
     credentials: true,
@@ -36,6 +51,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/faq', faqRoutes);
+
+// Add a test endpoint
+app.get('/test', (req, res) => {
+    res.json({ message: 'Backend is running!' });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
