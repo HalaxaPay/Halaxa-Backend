@@ -16,24 +16,6 @@ const PASSWORD_RULES = {
   requireSpecialChars: true
 };
 
-// Rate limiting configuration
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts
-  message: { error: 'Too many attempts, please try again later' }
-});
-
-// IP-based signup limiter
-export const signupLimiter = rateLimit({
-  windowMs: 24 * 60 * 60 * 1000, // 24 hours
-  max: 2, // Allow 2 signups per IP
-  message: { error: 'Maximum of 2 accounts can be created per IP address' },
-  keyGenerator: (req) => {
-    // Get IP address from request
-    return req.ip || req.connection.remoteAddress;
-  }
-});
-
 // Email validation middleware
 export const validateEmail = body('email')
   .matches(EMAIL_REGEX)
