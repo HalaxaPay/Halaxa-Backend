@@ -47,7 +47,7 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
       .insert([
         {
           email,
-          password: hashedPassword,
+          hashed_password: hashedPassword,
           first_name,
           last_name,
           plan: 'basic',
@@ -117,7 +117,7 @@ router.post('/login', validateEmail, validateRequest, async (req, res) => {
     }
 
     // Verify password
-    const validPassword = await bcrypt.compare(password, user.password);
+    const validPassword = await bcrypt.compare(password, user.hashed_password);
     if (!validPassword) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -257,7 +257,7 @@ router.post('/reset-password', async (req, res) => {
     // Update password and delete reset token
     const { error: updateError } = await supabase
       .from('users')
-      .update({ password: hashedPassword })
+      .update({ hashed_password: hashedPassword })
       .eq('id', resetToken.user_id);
 
     if (updateError) throw updateError;
