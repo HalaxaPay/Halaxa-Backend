@@ -93,9 +93,9 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'An error occurred during registration',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -177,7 +177,7 @@ router.get('/verify-email/:token', async (req, res) => {
     // Update user's email verification status
     const { error: updateError } = await supabase
       .from('users')
-      .update({ 
+      .update({
         is_email_verified: true,
         verification_token: null
       })
@@ -208,42 +208,32 @@ router.post('/forgot-password', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 3600000); // 1 hour from now
+    // Generate password reset token
+    const resetToken = await generatePasswordResetToken(user.id);
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-    // Store reset token
-    const { error: tokenError } = await supabase
-      .from('password_reset_tokens')
-      .insert([{
-        user_id: user.id,
-        token: resetToken,
-        expires_at: expiresAt.toISOString()
-      }]);
+    // TODO: Send password reset email
+    // For now, just log the URL to the console
+    console.log('Password Reset URL:', resetUrl);
 
-    if (tokenError) throw tokenError;
-
-    // Send reset email
-    await sendPasswordResetEmail(email, resetToken);
-
-    res.json({ message: 'Password reset instructions sent to your email' });
+    res.json({ message: 'Password reset email sent (check console for URL)' });
   } catch (error) {
-    console.error('Password reset request error:', error);
-    res.status(500).json({ error: 'Failed to process password reset request' });
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Forgot password failed' });
   }
 });
 
 // Reset password
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', validatePassword, validateRequest, async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 
-    // Find valid reset token
+    // Find token
     const { data: resetToken, error: tokenError } = await supabase
       .from('password_reset_tokens')
       .select('*')
       .eq('token', token)
-      .gt('expires_at', new Date().toISOString())
+      .gte('expires_at', new Date().toISOString())
       .single();
 
     if (tokenError || !resetToken) {
@@ -254,7 +244,7 @@ router.post('/reset-password', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    // Update password and delete reset token
+    // Update user's password
     const { error: updateError } = await supabase
       .from('users')
       .update({ password: hashedPassword })
@@ -262,15 +252,18 @@ router.post('/reset-password', async (req, res) => {
 
     if (updateError) throw updateError;
 
-    await supabase
+    // Invalidate token
+    const { error: invalidateError } = await supabase
       .from('password_reset_tokens')
-      .delete()
-      .eq('token', token);
+      .update({ expires_at: new Date().toISOString() })
+      .eq('id', resetToken.id);
 
-    res.json({ message: 'Password reset successful' });
+    if (invalidateError) throw invalidateError;
+
+    res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('Password reset error:', error);
-    res.status(500).json({ error: 'Failed to reset password' });
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Password reset failed' });
   }
 });
 

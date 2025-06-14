@@ -31,7 +31,7 @@ app.use(globalLimiter);
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://halaxaa.framer.website/',
+      origin: process.env.FRONTEND_URL || 'https://halaxapay.netlify.app/',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token']
