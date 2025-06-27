@@ -123,6 +123,8 @@ router.get('/plan-status', authenticateToken, async (req, res) => {
       .eq('id', req.user.id)
       .single();
 
+    // ⚠️ DEV WARNING: Using 'id' for users table is correct (primary key)
+
     if (error) throw error;
 
     // Get plan details
@@ -179,6 +181,8 @@ router.get('/upgrade-options/:targetPlan', authenticateToken, async (req, res) =
       .select('plan')
       .eq('id', req.user.id)
       .single();
+
+    // ⚠️ DEV WARNING: Using 'id' for users table is correct (primary key)
 
     if (error) throw error;
 
@@ -249,6 +253,8 @@ router.post('/manual-upgrade', authenticateToken, async (req, res) => {
         updated_at: new Date().toISOString()
       })
       .eq('id', req.user.id);
+
+    // ⚠️ DEV WARNING: Using 'id' for users table is correct (primary key)
 
     if (updateError) throw updateError;
 

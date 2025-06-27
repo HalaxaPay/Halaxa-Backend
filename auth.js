@@ -7,6 +7,11 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
+// ==================== SUPABASE AUTH INTEGRATION ==================== //
+// Note: Using Supabase Auth for user management
+// User IDs are generated automatically as UUIDs by Supabase
+// No custom ID generation needed
+
 // ==================== USER DASHBOARD INITIALIZATION ==================== //
 
 async function initializeUserDashboardTables(userId, email, firstName, lastName) {
@@ -274,54 +279,34 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
       last_name = nameParts.slice(1).join(' ') || null;
     }
 
-    // Check if user already exists
-    const { data: existingUser, error: checkError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .single();
+    // 🔐 USE SUPABASE AUTH for user creation (not custom users table)
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      user_metadata: {
+        first_name,
+        last_name,
+        full_name: fullName || `${first_name} ${last_name}`.trim()
+      },
+      email_confirm: true // Auto-confirm email
+    });
 
-    if (checkError && checkError.code !== 'PGRST116') {
-      console.error('Error checking existing user:', checkError);
-      return res.status(500).json({ error: 'Error checking user existence' });
-    }
-
-    if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
-    }
-
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create user
-    const { data: newUser, error: createError } = await supabase
-      .from('users')
-      .insert([
-        {
-          email,
-          password: hashedPassword,
-          first_name,
-          last_name,
-          plan: 'basic',
-          created_at: new Date().toISOString(),
-          is_email_verified: true // Set to true by default for now
-        }
-      ])
-      .select()
-      .single();
-
-    if (createError) {
-      console.error('Error creating user:', createError);
-      console.error('Supabase INSERT failed with message:', createError.message, 'Details:', createError.details);
-      return res.status(500).json({
+    if (authError) {
+      console.error('Supabase Auth creation error:', authError);
+      if (authError.message.includes('already registered')) {
+        return res.status(400).json({ error: 'User already exists' });
+      }
+      return res.status(500).json({ 
         error: 'Failed to create user',
-        details: createError.message
+        details: authError.message 
       });
     }
 
+    const newUser = authData.user;
+    console.log(`🔐 Created Supabase Auth user: ${newUser.id.substring(0, 8)}****`);
+
     // 🚀 INITIALIZE USER DASHBOARD TABLES
-    console.log(`🎯 Initializing dashboard tables for user: ${newUser.id}`);
+    console.log(`🎯 Initializing dashboard tables for Supabase Auth user: ${newUser.id}`);
     await initializeUserDashboardTables(newUser.id, email, first_name, last_name);
 
     // Generate tokens
@@ -343,9 +328,9 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
       user: {
         id: newUser.id,
         email: newUser.email,
-        first_name: newUser.first_name,
-        last_name: newUser.last_name,
-        plan: newUser.plan
+        first_name: newUser.user_metadata?.first_name,
+        last_name: newUser.user_metadata?.last_name,
+        plan: 'basic' // Default plan for new users
       }
     });
   } catch (error) {
@@ -362,22 +347,19 @@ router.post('/login', validateEmail, validateRequest, async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Get user
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .single();
+    // 🔐 USE SUPABASE AUTH for login (not custom users table)
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
 
-    if (error || !user) {
+    if (authError || !authData.user) {
+      console.error('Supabase Auth login error:', authError);
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    // Verify password
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(400).json({ error: 'Invalid credentials' });
-    }
+    const user = authData.user;
+    console.log(`🔐 Supabase Auth login success: ${user.id.substring(0, 8)}****`);
 
     // Generate tokens
     const accessToken = jwt.sign(
@@ -392,11 +374,8 @@ router.post('/login', validateEmail, validateRequest, async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    // Update last login
-    await supabase
-      .from('users')
-      .update({ last_login: new Date().toISOString() })
-      .eq('id', user.id);
+    // ⚠️ NOTE: No need to update last_login - Supabase Auth handles this automatically
+    console.log(`🔐 Supabase Auth manages user sessions automatically`);
 
     res.json({
       accessToken,
@@ -404,9 +383,9 @@ router.post('/login', validateEmail, validateRequest, async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        plan: user.plan
+        first_name: user.user_metadata?.first_name,
+        last_name: user.user_metadata?.last_name,
+        plan: 'basic' // Get from dashboard tables if needed
       }
     });
   } catch (error) {
@@ -439,6 +418,8 @@ router.get('/verify-email/:token', async (req, res) => {
         verification_token: null
       })
       .eq('id', user.id);
+
+    // ⚠️ DEV WARNING: Using 'id' for users table is correct (primary key)
 
     if (updateError) throw updateError;
 
@@ -555,6 +536,47 @@ router.post('/refresh-token', async (req, res) => {
   } catch (error) {
     console.error('Token refresh error:', error);
     res.status(401).json({ error: 'Invalid refresh token' });
+  }
+});
+
+// 🔐 Session validation endpoint using Supabase Auth
+router.get('/session', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    // 🔐 USE SUPABASE AUTH to validate session
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      console.error('Supabase Auth session validation error:', error);
+      return res.status(401).json({ error: 'Invalid session' });
+    }
+
+    // Log secure session validation
+    console.log(`🔐 Supabase Auth session validated: ${user.id.substring(0, 8)}****`);
+
+    res.json({
+      valid: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        first_name: user.user_metadata?.first_name,
+        last_name: user.user_metadata?.last_name,
+        plan: 'basic', // Get from dashboard tables if needed
+        created_at: user.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Session validation error:', error);
+    return res.status(401).json({ 
+      valid: false, 
+      error: 'Invalid or expired session' 
+    });
   }
 });
 

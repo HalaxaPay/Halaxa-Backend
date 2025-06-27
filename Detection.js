@@ -931,6 +931,9 @@ class HalaxaDetectionSystem {
         .from('users')
         .update({ last_login: new Date().toISOString() })
         .eq('id', userId);
+
+      // ⚠️ DEV WARNING: Using 'id' for users table is correct (primary key)
+      console.log(`🔐 Updated last active for user: ${userId.substring(0, 4)}****`);
     } catch (error) {
       console.error(`Error updating last active for user ${userId}:`, error);
     }

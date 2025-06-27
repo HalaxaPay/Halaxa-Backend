@@ -4765,6 +4765,9 @@ async function fetchUserProfile(userId) {
     .eq('id', userId)
     .single();
 
+  // ⚠️ DEV WARNING: Using 'id' for users table is correct (primary key)
+  console.log(`🔐 Fetching user profile for ID: ${userId.substring(0, 4)}****`);
+
   if (error) throw error;
   return user;
 }
