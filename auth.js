@@ -7,6 +7,259 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
+// ==================== USER DASHBOARD INITIALIZATION ==================== //
+
+async function initializeUserDashboardTables(userId, email, firstName, lastName) {
+  console.log('🚀 Starting backend user dashboard initialization...');
+  
+  // Helper function for safe inserts
+  async function safeInsert(tableName, data, description) {
+    try {
+      console.log(`📝 ${description}...`);
+      const { data: insertData, error } = await supabase
+        .from(tableName)
+        .insert([data])
+        .select();
+      
+      if (error) {
+        if (error.code === '42P01') {
+          console.warn(`⚠️ Table '${tableName}' doesn't exist yet - skipping`);
+        } else {
+          console.error(`❌ Failed to ${description.toLowerCase()}:`, error.message);
+        }
+        return false;
+      } else {
+        console.log(`✅ ${description} successful`);
+        return true;
+      }
+    } catch (error) {
+      console.error(`❌ Error during ${description.toLowerCase()}:`, error.message);
+      return false;
+    }
+  }
+
+  // Generate user initials
+  const generateInitials = (firstName, lastName) => {
+    if (!firstName) return 'U';
+    if (!lastName) return firstName.charAt(0).toUpperCase();
+    return (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
+  };
+
+  const initials = generateInitials(firstName, lastName);
+  const fullName = [firstName, lastName].filter(Boolean).join(' ');
+  const currentTime = new Date().toISOString();
+  const nextBilling = new Date();
+  nextBilling.setDate(nextBilling.getDate() + 30);
+
+  const initializationResults = {
+    user_profiles: false,
+    user_plans: false,
+    user_metrics: false,
+    user_balances: false,
+    fees_saved: false,
+    usdc_balances: false,
+    network_distributions: false,
+    key_metrics: false,
+    execution_metrics: false,
+    monthly_metrics: false,
+    transaction_insights: false,
+    user_growth: false,
+    ai_oracle_messages: false
+  };
+
+  try {
+    // 1. Initialize user_profiles (CRITICAL)
+    initializationResults.user_profiles = await safeInsert('user_profiles', {
+      user_id: userId,
+      name: fullName || '',
+      initials: initials,
+      email: email,
+      created_at: currentTime
+    }, 'Creating user profile');
+
+    // 2. Initialize user_plans (CRITICAL)
+    initializationResults.user_plans = await safeInsert('user_plans', {
+      user_id: userId,
+      plan_type: 'basic',
+      started_at: currentTime,
+      next_billing: nextBilling.toISOString(),
+      auto_renewal: true
+    }, 'Creating user plan');
+
+    // 3. Initialize user_metrics (CRITICAL)
+    initializationResults.user_metrics = await safeInsert('user_metrics', {
+      user_id: userId,
+      days_active: 0,
+      status_level: 'new',
+      current_streak: 0,
+      longest_streak: 0,
+      total_transactions: 0,
+      last_transaction: null,
+      last_updated: currentTime
+    }, 'Creating user metrics');
+
+    // 4. Initialize user_balances (CRITICAL)
+    initializationResults.user_balances = await safeInsert('user_balances', {
+      user_id: userId,
+      wallet_address: '',
+      usdc_polygon: 0,
+      usdc_tron: 0,
+      usdc_solana: 0,
+      usd_equivalent: 0,
+      last_updated: currentTime
+    }, 'Creating user balances');
+
+    // 5. Initialize fees_saved
+    initializationResults.fees_saved = await safeInsert('fees_saved', {
+      user_id: userId,
+      saved_amount: 0,
+      total_transactions: 0,
+      average_savings_per_tx: 0,
+      last_updated: currentTime
+    }, 'Creating fees saved tracking');
+
+    // 6. Initialize usdc_balances (Network-specific)
+    console.log('💰 Creating network-specific USDC balances...');
+    const networks = ['polygon', 'solana', 'tron'];
+    let usdcBalanceSuccess = true;
+    
+    for (const network of networks) {
+      const success = await safeInsert('usdc_balances', {
+        user_id: userId,
+        network: network,
+        balance: 0,
+        wallet_address: '',
+        last_sync: currentTime,
+        is_active: false
+      }, `Creating ${network} USDC balance`);
+      
+      if (!success) usdcBalanceSuccess = false;
+    }
+    initializationResults.usdc_balances = usdcBalanceSuccess;
+
+    // 7. Initialize network_distributions (Network-specific)
+    console.log('🌐 Creating network distributions...');
+    let networkDistributionSuccess = true;
+    
+    for (const network of networks) {
+      const success = await safeInsert('network_distributions', {
+        user_id: userId,
+        network: network,
+        percentage: 0,
+        amount_usdc: 0,
+        transaction_count: 0,
+        last_updated: currentTime
+      }, `Creating ${network} network distribution`);
+      
+      if (!success) networkDistributionSuccess = false;
+    }
+    initializationResults.network_distributions = networkDistributionSuccess;
+
+    // 8. Initialize key_metrics
+    initializationResults.key_metrics = await safeInsert('key_metrics', {
+      user_id: userId,
+      total_volume: 0,
+      total_transactions: 0,
+      successful_payments: 0,
+      failed_payments: 0,
+      pending_payments: 0,
+      conversion_rate: 0,
+      last_updated: currentTime
+    }, 'Creating key metrics');
+
+    // 9. Initialize execution_metrics
+    initializationResults.execution_metrics = await safeInsert('execution_metrics', {
+      user_id: userId,
+      average_processing_time: 0,
+      fastest_transaction: 0,
+      slowest_transaction: 0,
+      total_processing_time: 0,
+      success_rate: 100,
+      error_rate: 0,
+      last_updated: currentTime
+    }, 'Creating execution metrics');
+
+    // 10. Initialize monthly_metrics
+    initializationResults.monthly_metrics = await safeInsert('monthly_metrics', {
+      user_id: userId,
+      month: currentTime.slice(0, 7), // YYYY-MM format
+      total_volume: 0,
+      transaction_count: 0,
+      unique_payers: 0,
+      average_transaction: 0,
+      growth_rate: 0,
+      created_at: currentTime
+    }, 'Creating monthly metrics');
+
+    // 11. Initialize transaction_insights
+    initializationResults.transaction_insights = await safeInsert('transaction_insights', {
+      user_id: userId,
+      total_volume: 0,
+      average_transaction_size: 0,
+      peak_hour: null,
+      most_active_day: null,
+      transaction_frequency: 0,
+      largest_transaction: 0,
+      smallest_transaction: 0,
+      last_updated: currentTime
+    }, 'Creating transaction insights');
+
+    // 12. Initialize user_growth
+    initializationResults.user_growth = await safeInsert('user_growth', {
+      user_id: userId,
+      growth_stage: 'onboarding',
+      metrics_score: 0,
+      engagement_level: 'new',
+      next_milestone: 'first_payment',
+      recommendations: JSON.stringify(['Complete your first payment link', 'Set up wallet addresses']),
+      last_updated: currentTime
+    }, 'Creating user growth tracking');
+
+    // 13. Initialize ai_oracle_messages
+    initializationResults.ai_oracle_messages = await safeInsert('ai_oracle_messages', {
+      user_id: userId,
+      message_type: 'welcome',
+      content: `Welcome to Halaxa Pay, ${firstName || 'User'}! Your dashboard is ready to help you manage crypto payments.`,
+      is_read: false,
+      priority: 'low',
+      created_at: currentTime
+    }, 'Creating AI oracle welcome message');
+
+    // Log final results
+    const successCount = Object.values(initializationResults).filter(Boolean).length;
+    const totalTables = Object.keys(initializationResults).length;
+    
+    console.log(`🎉 Backend dashboard initialization complete: ${successCount}/${totalTables} tables initialized`);
+    
+    // Check core tables
+    const coreResults = {
+      user_profiles: initializationResults.user_profiles,
+      user_plans: initializationResults.user_plans,
+      user_metrics: initializationResults.user_metrics,
+      user_balances: initializationResults.user_balances
+    };
+    const coreSuccessCount = Object.values(coreResults).filter(Boolean).length;
+    
+    if (coreSuccessCount >= 4) {
+      console.log('✅ All core dashboard tables initialized successfully');
+    } else {
+      console.warn('⚠️ Some core tables failed to initialize - dashboard may have empty states');
+      console.warn('🔧 Core table results:', coreResults);
+    }
+    
+    const optionalSuccess = successCount - coreSuccessCount;
+    const optionalTables = totalTables - 4;
+    console.log(`📊 Optional tables: ${optionalSuccess}/${optionalTables} initialized`);
+    
+    if (successCount >= 10) {
+      console.log('🌟 Excellent initialization! User dashboard fully prepared');
+    }
+
+  } catch (error) {
+    console.error('❌ Error during backend dashboard initialization:', error);
+  }
+}
+
 // Register endpoint
 router.post('/register', validateEmail, validatePassword, validateRequest, async (req, res) => {
   try {
@@ -66,6 +319,10 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
         details: createError.message
       });
     }
+
+    // 🚀 INITIALIZE USER DASHBOARD TABLES
+    console.log(`🎯 Initializing dashboard tables for user: ${newUser.id}`);
+    await initializeUserDashboardTables(newUser.id, email, first_name, last_name);
 
     // Generate tokens
     const accessToken = jwt.sign(

@@ -8,14 +8,97 @@ import { supabase } from './supabase.js';
 
 const router = express.Router();
 
-// Replace with your real Stripe Secret Key
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);  
+// Replace with your real Stripe Secret Key (keeping as fake dummy as requested)
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy_key_12345');  
 
-// Replace with your real Stripe Webhook Signing Secret
-const endpointSecret = process.env.STRIPE_WEBHOOK_SIGNING_SECRET;
+// Replace with your real Stripe Webhook Signing Secret (keeping as fake dummy as requested)
+const endpointSecret = process.env.STRIPE_WEBHOOK_SIGNING_SECRET || 'whsec_dummy_secret_12345';
 
+// Plan configurations with fake price IDs as requested
+const PLAN_CONFIGS = {
+  pro: {
+    priceId: 'price_123_pro',
+    name: 'Pro Plan',
+    price: 29,
+    features: ['30 Payment Links', 'Advanced Analytics', 'Priority Support']
+  },
+  elite: {
+    priceId: 'price_456_elite', 
+    name: 'Elite Plan',
+    price: 99,
+    features: ['Unlimited Payment Links', 'Real-time Analytics', '24/7 Support', 'Custom Branding']
+  }
+};
+
+// Create checkout session endpoint
+router.post('/create-checkout-session', async (req, res) => {
+  try {
+    const { plan, email, userId } = req.body;
+
+    if (!plan || !email) {
+      return res.status(400).json({ error: 'Plan and email are required' });
+    }
+
+    const planConfig = PLAN_CONFIGS[plan];
+    if (!planConfig) {
+      return res.status(400).json({ error: 'Invalid plan selected' });
+    }
+
+    // Create Stripe checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: planConfig.name,
+              description: `Upgrade to ${planConfig.name} - ${planConfig.features.join(', ')}`
+            },
+            unit_amount: planConfig.price * 100, // Convert to cents
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment', // One-time payment, change to 'subscription' if needed
+      customer_email: email,
+      metadata: {
+        plan: plan,
+        userId: userId || '',
+        email: email
+      },
+      success_url: `${process.env.FRONTEND_URL || 'https://halaxapay.netlify.app'}?upgrade=success&plan=${plan}`,
+      cancel_url: `${process.env.FRONTEND_URL || 'https://halaxapay.netlify.app'}?upgrade=cancelled`,
+    });
+
+    res.json({ 
+      sessionId: session.id,
+      url: session.url
+    });
+
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// Get plan information endpoint
+router.get('/plans', (req, res) => {
+  res.json({
+    plans: {
+      basic: {
+        name: 'Basic Plan',
+        price: 0,
+        features: ['1 Payment Link', 'Basic Analytics']
+      },
+      ...PLAN_CONFIGS
+    }
+  });
+});
+
+// Webhook handler
 router.post(
-  '/stripe-webhook',
+  '/webhook',
   bodyParser.raw({ type: 'application/json' }),
   async (req, res) => {
     const sig = req.headers['stripe-signature'];
@@ -28,41 +111,160 @@ router.post(
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    if (
-      event.type === 'checkout.session.completed' ||
-      event.type === 'invoice.payment_succeeded'
-    ) {
-      const session = event.data.object;
-      const email = session.customer_email || session.customer_details?.email;
-      const priceId =
-        session.subscription
-          ? session.items?.data[0]?.price?.id
-          : session.lines?.data[0]?.price?.id;
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await handleCheckoutSessionCompleted(event.data.object);
+          break;
+        
+        case 'invoice.payment_succeeded':
+          await handlePaymentSucceeded(event.data.object);
+          break;
+        
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+          await handleSubscriptionUpdate(event.data.object);
+          break;
+        
+        case 'customer.subscription.deleted':
+          await handleSubscriptionCancelled(event.data.object);
+          break;
 
-      const priceToPlanMap = {
-        'price_123_pro': 'pro',
-        'price_456_elite': 'elite'
-      };
-
-      const newPlan = priceToPlanMap[priceId];
-
-      if (email && newPlan) {
-        try {
-          const { error } = await supabase
-            .from('users')
-            .update({ plan: newPlan })
-            .eq('email', email);
-
-          if (error) throw error;
-          console.log(`✅ Plan upgraded to ${newPlan} for ${email}`);
-        } catch (err) {
-          console.error('❌ DB update failed:', err.message);
-        }
+        default:
+          console.log(`Unhandled event type: ${event.type}`);
       }
-    }
 
-    res.json({ received: true });
+      res.json({ received: true });
+    } catch (error) {
+      console.error('Error processing webhook:', error);
+      res.status(500).json({ error: 'Webhook processing failed' });
+    }
   }
 );
+
+// Helper functions for webhook processing
+async function handleCheckoutSessionCompleted(session) {
+  const email = session.customer_email || session.customer_details?.email;
+  const plan = session.metadata?.plan;
+  
+  if (email && plan) {
+    await updateUserPlan(email, plan, {
+      stripeCustomerId: session.customer,
+      stripeSessionId: session.id,
+      paymentStatus: 'completed'
+    });
+    console.log(`✅ Plan upgraded to ${plan} for ${email} via checkout session`);
+  }
+}
+
+async function handlePaymentSucceeded(invoice) {
+  const email = invoice.customer_email;
+  const subscription = invoice.subscription;
+  
+  if (email && subscription) {
+    // Get subscription details to determine plan
+    const sub = await stripe.subscriptions.retrieve(subscription);
+    const priceId = sub.items.data[0]?.price?.id;
+    
+    const priceToPlanMap = {
+      'price_123_pro': 'pro',
+      'price_456_elite': 'elite'
+    };
+    
+    const plan = priceToPlanMap[priceId];
+    if (plan) {
+      await updateUserPlan(email, plan, {
+        stripeCustomerId: invoice.customer,
+        stripeSubscriptionId: subscription,
+        paymentStatus: 'active'
+      });
+      console.log(`✅ Subscription payment succeeded for ${email}, plan: ${plan}`);
+    }
+  }
+}
+
+async function handleSubscriptionUpdate(subscription) {
+  const customer = await stripe.customers.retrieve(subscription.customer);
+  const email = customer.email;
+  const priceId = subscription.items.data[0]?.price?.id;
+  
+  const priceToPlanMap = {
+    'price_123_pro': 'pro',
+    'price_456_elite': 'elite'
+  };
+  
+  const plan = priceToPlanMap[priceId];
+  if (email && plan) {
+    await updateUserPlan(email, plan, {
+      stripeCustomerId: subscription.customer,
+      stripeSubscriptionId: subscription.id,
+      paymentStatus: subscription.status
+    });
+    console.log(`✅ Subscription updated for ${email}, plan: ${plan}, status: ${subscription.status}`);
+  }
+}
+
+async function handleSubscriptionCancelled(subscription) {
+  const customer = await stripe.customers.retrieve(subscription.customer);
+  const email = customer.email;
+  
+  if (email) {
+    await updateUserPlan(email, 'basic', {
+      stripeCustomerId: subscription.customer,
+      stripeSubscriptionId: null,
+      paymentStatus: 'cancelled'
+    });
+    console.log(`✅ Subscription cancelled for ${email}, downgraded to basic plan`);
+  }
+}
+
+async function updateUserPlan(email, plan, stripeData = {}) {
+  try {
+    const updateData = {
+      plan: plan,
+      updated_at: new Date().toISOString(),
+      ...stripeData
+    };
+
+    const { error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('email', email);
+
+    if (error) throw error;
+    
+    // Also log the plan change in activity logs
+    await logPlanChange(email, plan);
+    
+  } catch (err) {
+    console.error('❌ Failed to update user plan:', err.message);
+    throw err;
+  }
+}
+
+async function logPlanChange(email, newPlan) {
+  try {
+    // Get user ID
+    const { data: userData } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
+
+    if (userData) {
+      await supabase
+        .from('activity_logs')
+        .insert({
+          user_id: userData.id,
+          action: 'plan_upgrade',
+          details: `Plan upgraded to ${newPlan}`,
+          timestamp: new Date().toISOString()
+        });
+    }
+  } catch (error) {
+    console.error('Failed to log plan change:', error);
+    // Don't throw - this is non-critical
+  }
+}
 
 export default router; 
