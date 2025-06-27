@@ -73,13 +73,12 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
   };
 
   try {
-    // 1. Initialize user_profiles (CRITICAL)
+    // 1. Initialize user_profiles (CRITICAL) - Match actual table structure
     initializationResults.user_profiles = await safeInsert('user_profiles', {
       user_id: userId,
       name: fullName || '',
-      initials: initials,
-      email: email,
-      created_at: currentTime
+      initials: initials
+      // Note: removed email and created_at as they may not exist in actual table
     }, 'Creating user profile');
 
     // 2. Initialize user_plans (CRITICAL)
@@ -91,36 +90,32 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       auto_renewal: true
     }, 'Creating user plan');
 
-    // 3. Initialize user_metrics (CRITICAL)
+    // 3. Initialize user_metrics (CRITICAL) - Match actual table structure
     initializationResults.user_metrics = await safeInsert('user_metrics', {
       user_id: userId,
       days_active: 0,
       status_level: 'new',
-      current_streak: 0,
-      longest_streak: 0,
-      total_transactions: 0,
-      last_transaction: null,
-      last_updated: currentTime
+      current_streak: 0
+      // Note: removed fields that don't exist in actual table
     }, 'Creating user metrics');
 
-    // 4. Initialize user_balances (CRITICAL)
+    // 4. Initialize user_balances (CRITICAL) - Match actual table structure
     initializationResults.user_balances = await safeInsert('user_balances', {
       user_id: userId,
       wallet_address: '',
+      is_active: true,
       usdc_polygon: 0,
       usdc_tron: 0,
       usdc_solana: 0,
-      usd_equivalent: 0,
-      last_updated: currentTime
+      usd_equivalent: 0
+      // Note: using last_active instead of last_updated to match schema
     }, 'Creating user balances');
 
-    // 5. Initialize fees_saved
+    // 5. Initialize fees_saved - Match actual table structure
     initializationResults.fees_saved = await safeInsert('fees_saved', {
       user_id: userId,
-      saved_amount: 0,
-      total_transactions: 0,
-      average_savings_per_tx: 0,
-      last_updated: currentTime
+      saved_amount: 0
+      // Note: removed fields that don't exist in actual table
     }, 'Creating fees saved tracking');
 
     // 6. Initialize usdc_balances (Network-specific)
@@ -132,10 +127,9 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       const success = await safeInsert('usdc_balances', {
         user_id: userId,
         network: network,
-        balance: 0,
-        wallet_address: '',
-        last_sync: currentTime,
-        is_active: false
+        balance_usdc: 0,
+        balance_usd: 0
+        // Note: removed fields that don't exist in actual table
       }, `Creating ${network} USDC balance`);
       
       if (!success) usdcBalanceSuccess = false;
@@ -150,84 +144,72 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       const success = await safeInsert('network_distributions', {
         user_id: userId,
         network: network,
-        percentage: 0,
-        amount_usdc: 0,
-        transaction_count: 0,
-        last_updated: currentTime
+        volume_usdc: 0,
+        percent_usage: 0
+        // Note: using actual column names from your schema
       }, `Creating ${network} network distribution`);
       
       if (!success) networkDistributionSuccess = false;
     }
     initializationResults.network_distributions = networkDistributionSuccess;
 
-    // 8. Initialize key_metrics
+    // 8. Initialize key_metrics - Match actual table structure
     initializationResults.key_metrics = await safeInsert('key_metrics', {
       user_id: userId,
-      total_volume: 0,
-      total_transactions: 0,
-      successful_payments: 0,
-      failed_payments: 0,
-      pending_payments: 0,
       conversion_rate: 0,
-      last_updated: currentTime
+      avg_processing_time: 0,
+      fees_saved_total: 0,
+      active_wallets: 0,
+      volume_24h: 0,
+      gas_optimization_score: 0
+      // Note: using actual column names from your schema
     }, 'Creating key metrics');
 
-    // 9. Initialize execution_metrics
+    // 9. Initialize execution_metrics - Match actual table structure
     initializationResults.execution_metrics = await safeInsert('execution_metrics', {
       user_id: userId,
-      average_processing_time: 0,
-      fastest_transaction: 0,
-      slowest_transaction: 0,
-      total_processing_time: 0,
-      success_rate: 100,
-      error_rate: 0,
-      last_updated: currentTime
+      flawless_executions: 0,
+      total_executions: 0,
+      avg_tx_flow: 0,
+      velocity: 0
+      // Note: using actual column names from your schema
     }, 'Creating execution metrics');
 
-    // 10. Initialize monthly_metrics
+    // 10. Initialize monthly_metrics - Match actual table structure
     initializationResults.monthly_metrics = await safeInsert('monthly_metrics', {
       user_id: userId,
-      month: currentTime.slice(0, 7), // YYYY-MM format
-      total_volume: 0,
-      transaction_count: 0,
-      unique_payers: 0,
-      average_transaction: 0,
-      growth_rate: 0,
-      created_at: currentTime
+      month_start: new Date().toISOString().slice(0, 10), // YYYY-MM-DD format
+      mrr_usdc: 0,
+      constellation_data: {}
+      // Note: using actual column names from your schema
     }, 'Creating monthly metrics');
 
-    // 11. Initialize transaction_insights
+    // 11. Initialize transaction_insights - Match actual table structure
     initializationResults.transaction_insights = await safeInsert('transaction_insights', {
       user_id: userId,
-      total_volume: 0,
-      average_transaction_size: 0,
       peak_hour: null,
-      most_active_day: null,
-      transaction_frequency: 0,
-      largest_transaction: 0,
-      smallest_transaction: 0,
-      last_updated: currentTime
+      cross_chain_transfers: 0,
+      smart_contract_calls: 0,
+      avg_api_response_time: 0,
+      security_score: 0,
+      user_satisfaction_score: 0
+      // Note: using actual column names from your schema
     }, 'Creating transaction insights');
 
-    // 12. Initialize user_growth
+    // 12. Initialize user_growth - Match actual table structure
     initializationResults.user_growth = await safeInsert('user_growth', {
       user_id: userId,
-      growth_stage: 'onboarding',
-      metrics_score: 0,
-      engagement_level: 'new',
-      next_milestone: 'first_payment',
-      recommendations: JSON.stringify(['Complete your first payment link', 'Set up wallet addresses']),
-      last_updated: currentTime
+      active_users: 1,
+      avg_volume_per_user: 0
+      // Note: using actual column names from your schema
     }, 'Creating user growth tracking');
 
-    // 13. Initialize ai_oracle_messages
+    // 13. Initialize ai_oracle_messages - Match actual table structure
     initializationResults.ai_oracle_messages = await safeInsert('ai_oracle_messages', {
       user_id: userId,
       message_type: 'welcome',
-      content: `Welcome to Halaxa Pay, ${firstName || 'User'}! Your dashboard is ready to help you manage crypto payments.`,
-      is_read: false,
-      priority: 'low',
-      created_at: currentTime
+      content: `Welcome to Halaxa Pay, ${firstName || 'User'}! Your dashboard is ready to help you manage crypto payments.`
+      // Note: removed fields that don't exist in actual table
     }, 'Creating AI oracle welcome message');
 
     // Log final results
