@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Failed - Halaxa</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            /* Clean Red & White Palette */
+            --error-primary: #dc2626;
+            --error-secondary: #ef4444;
+            --error-light: #fca5a5;
+            --error-dark: #991b1b;
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --bg-white: #ffffff;
+            --bg-light: #f9fafb;
+            --border-light: #e5e7eb;
+            --shadow-error: 0 10px 25px rgba(220, 38, 38, 0.15);
+            --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-primary);
+            background: var(--bg-white);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 1rem;
+        }
+
+        /* Simplified Digital Glitch Effects */
+        .glitch-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.4;
+        }
+
+        .glitch-lines {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 3px,
+                rgba(220, 38, 38, 0.02) 3px,
+                rgba(220, 38, 38, 0.02) 4px
+            );
+            animation: glitchLines 0.15s infinite linear;
+        }
+
+        @keyframes glitchLines {
+            0% { transform: translateY(0px); }
+            100% { transform: translateY(4px); }
+        }
+
+        .glitch-bars {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: 
+                linear-gradient(90deg, transparent 0%, rgba(220, 38, 38, 0.05) 30%, transparent 31%),
+                linear-gradient(90deg, transparent 60%, rgba(220, 38, 38, 0.05) 90%, transparent 91%);
+            animation: glitchBars 3s infinite ease-in-out;
+        }
+
+        @keyframes glitchBars {
+            0%, 100% { 
+                transform: translateX(0px);
+                opacity: 0;
+            }
+            15% { 
+                transform: translateX(-3px);
+                opacity: 1;
+            }
+            30% { 
+                transform: translateX(3px);
+                opacity: 0.7;
+            }
+            45% { 
+                transform: translateX(0px);
+                opacity: 0;
+            }
+        }
+
+        /* Main Failure Card */
+        .failure-card {
+            background: var(--bg-white);
+            border: 2px solid var(--error-primary);
+            border-radius: 20px;
+            padding: 3rem;
+            max-width: 500px;
+            width: 100%;
+            position: relative;
+            z-index: 10;
+            box-shadow: var(--shadow-error);
+            animation: cardGlitch 5s infinite ease-in-out;
+        }
+
+        @keyframes cardGlitch {
+            0%, 100% {
+                transform: translateX(0px);
+            }
+            2% {
+                transform: translateX(-1px);
+            }
+            4% {
+                transform: translateX(1px);
+            }
+            6% {
+                transform: translateX(0px);
+            }
+        }
+
+        .failure-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--error-primary);
+            border-radius: 20px 20px 0 0;
+            animation: errorPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes errorPulse {
+            0%, 100% { 
+                background: var(--error-primary);
+            }
+            50% { 
+                background: var(--error-secondary);
+            }
+        }
+
+        /* Error Icon */
+        .error-icon-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        .error-icon {
+            width: 80px;
+            height: 80px;
+            background: var(--error-primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: white;
+            animation: iconGlitch 4s ease-in-out infinite;
+            box-shadow: var(--shadow-error);
+        }
+
+        @keyframes iconGlitch {
+            0%, 100% {
+                transform: scale(1);
+            }
+            5% {
+                transform: scale(1.05) translateX(-1px);
+            }
+            10% {
+                transform: scale(0.95) translateX(1px);
+            }
+            15% {
+                transform: scale(1);
+            }
+        }
+
+        /* Title with Glitch Effect */
+        .failure-title {
+            font-size: 2.2rem;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 1rem;
+            color: var(--error-primary);
+            animation: textGlitch 6s ease-in-out infinite;
+        }
+
+        @keyframes textGlitch {
+            0%, 100% {
+                text-shadow: none;
+            }
+            2% {
+                text-shadow: 
+                    -1px 0 0 rgba(220, 38, 38, 0.8),
+                    1px 0 0 rgba(220, 38, 38, 0.3);
+            }
+            4% {
+                text-shadow: 
+                    1px 0 0 rgba(220, 38, 38, 0.8),
+                    -1px 0 0 rgba(220, 38, 38, 0.3);
+            }
+            6% {
+                text-shadow: none;
+            }
+        }
+
+        .failure-subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+            font-weight: 500;
+        }
+
+        /* Details Section */
+        .details-section {
+            background: var(--bg-light);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            animation: detailsGlitch 8s infinite ease-in-out;
+        }
+
+        @keyframes detailsGlitch {
+            0%, 100% {
+                border-color: var(--border-light);
+            }
+            5% {
+                border-color: var(--error-light);
+            }
+            10% {
+                border-color: var(--border-light);
+            }
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .detail-value-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            max-width: 60%;
+        }
+
+        .detail-value {
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-align: right;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .detail-value:hover {
+            color: var(--error-primary);
+        }
+
+        .expand-btn {
+            background: var(--error-primary);
+            border: none;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.6rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .expand-btn:hover {
+            background: var(--error-secondary);
+            transform: scale(1.1);
+        }
+
+        .expand-btn.expanded {
+            transform: rotate(180deg);
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .retry-btn {
+            flex: 1;
+            background: var(--error-primary);
+            border: none;
+            color: white;
+            padding: 0.875rem 1.5rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: var(--font-primary);
+        }
+
+        .retry-btn:hover {
+            background: var(--error-secondary);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(220, 38, 38, 0.2);
+        }
+
+        .support-btn {
+            flex: 1;
+            background: transparent;
+            border: 2px solid var(--error-primary);
+            color: var(--error-primary);
+            padding: 0.875rem 1.5rem;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: var(--font-primary);
+        }
+
+        .support-btn:hover {
+            background: var(--error-primary);
+            color: white;
+            transform: translateY(-1px);
+        }
+
+        /* Footer */
+        .failure-footer {
+            text-align: center;
+            margin-top: 2rem;
+            background: var(--bg-light);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 1.5rem;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .footer-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .footer-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .footer-email {
+            color: var(--error-primary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .footer-email:hover {
+            color: var(--error-secondary);
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .failure-card {
+                padding: 2rem;
+                margin: 1rem 0;
+            }
+
+            .failure-title {
+                font-size: 1.8rem;
+            }
+
+            .detail-row {
+                flex-direction: column;
+                gap: 0.5rem;
+                align-items: flex-start;
+            }
+
+            .detail-value-container {
+                max-width: 100%;
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .detail-value {
+                text-align: left;
+                max-width: calc(100% - 28px);
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .failure-card {
+                padding: 1.5rem;
+            }
+
+            .failure-title {
+                font-size: 1.6rem;
+            }
+
+            .error-icon {
+                width: 70px;
+                height: 70px;
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Simplified Digital Glitch Overlay -->
+    <div class="glitch-overlay">
+        <div class="glitch-lines"></div>
+        <div class="glitch-bars"></div>
+    </div>
+
+    <div class="failure-card">
+        <div class="error-icon-container">
+            <div class="error-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+        </div>
+        
+        <h1 class="failure-title">Payment Failed</h1>
+        <p class="failure-subtitle">We couldn't process your USDC transaction. Your funds are safe. Please try again or contact support.</p>
+
+        <div class="details-section">
+            <div class="detail-row">
+                <div class="detail-label">Amount Attempted</div>
+                <div class="detail-value-container">
+                    <div class="detail-value" id="amountAttempted">100.00 USDC</div>
+                </div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Wallet Address</div>
+                <div class="detail-value-container">
+                    <div class="detail-value" id="walletAddress" onclick="expandWalletAddress()">0x123...abc</div>
+                    <button class="expand-btn" id="walletExpandBtn" onclick="expandWalletAddress()" aria-label="Expand wallet address">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-label">Transaction ID</div>
+                <div class="detail-value-container">
+                    <div class="detail-value" id="transactionId" onclick="expandTransactionId()">0xdef...456</div>
+                    <button class="expand-btn" id="transactionExpandBtn" onclick="expandTransactionId()" aria-label="Expand transaction ID">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <button class="retry-btn" onclick="retryPayment()">
+                <i class="fas fa-redo"></i> Try Again
+            </button>
+            <button class="support-btn" onclick="contactSupport()">
+                <i class="fas fa-headset"></i> Get Help
+            </button>
+        </div>
+    </div>
+
+    <div class="failure-footer">
+        <div class="footer-title">Halaxa Security</div>
+        <div class="footer-subtitle">
+            Your transaction security is our priority. Contact <a href="mailto:Halaxa.inc@gmail.com" class="footer-email">Halaxa.inc@gmail.com</a> for assistance.
+        </div>
+    </div>
+
+    <script>
+        // Store full values
+        let fullWalletAddress = '';
+        let fullTransactionId = '';
+        let walletExpanded = false;
+        let transactionExpanded = false;
+
+        // Function to expand wallet address
+        function expandWalletAddress() {
+            const walletElement = document.getElementById('walletAddress');
+            const expandBtn = document.getElementById('walletExpandBtn');
+            
+            if (walletExpanded) {
+                walletElement.classList.remove('expanded');
+                expandBtn.classList.remove('expanded');
+                walletElement.textContent = shortenAddress(fullWalletAddress);
+                expandBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+                expandBtn.setAttribute('aria-label', 'Expand wallet address');
+                walletExpanded = false;
+            } else {
+                walletElement.classList.add('expanded');
+                expandBtn.classList.add('expanded');
+                walletElement.textContent = fullWalletAddress;
+                expandBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+                expandBtn.setAttribute('aria-label', 'Collapse wallet address');
+                walletExpanded = true;
+            }
+        }
+
+        // Function to expand transaction ID
+        function expandTransactionId() {
+            const transactionElement = document.getElementById('transactionId');
+            const expandBtn = document.getElementById('transactionExpandBtn');
+            
+            if (transactionExpanded) {
+                transactionElement.classList.remove('expanded');
+                expandBtn.classList.remove('expanded');
+                transactionElement.textContent = shortenAddress(fullTransactionId);
+                expandBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+                expandBtn.setAttribute('aria-label', 'Expand transaction ID');
+                transactionExpanded = false;
+            } else {
+                transactionElement.classList.add('expanded');
+                expandBtn.classList.add('expanded');
+                transactionElement.textContent = fullTransactionId;
+                expandBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+                expandBtn.setAttribute('aria-label', 'Collapse transaction ID');
+                transactionExpanded = true;
+            }
+        }
+
+        // Function to shorten addresses
+        function shortenAddress(address) {
+            if (!address || address.length < 10) return address;
+            return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+        }
+
+        // Action button functions
+        function retryPayment() {
+            window.history.back();
+        }
+
+        function contactSupport() {
+            window.open('mailto:Halaxa.inc@gmail.com?subject=Payment Failed - Need Help', '_blank');
+        }
+
+        async function fetchFailedTransactionDetails() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const paymentId = urlParams.get('paymentId');
+
+                if (!paymentId) {
+                    console.error('No payment ID found in URL');
+                    return;
+                }
+
+                const BACKEND_URL = 'https://halaxa-backend.onrender.com';
+        const response = await fetch(`${BACKEND_URL}/api/payment/status/${paymentId}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch transaction details');
+                }
+
+                const data = await response.json();
+
+                fullWalletAddress = data.wallet || '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
+                fullTransactionId = data.txHash || '0x1234567890abcdef1234567890abcdef123456789012345678901234567890abcdef';
+
+                document.getElementById('amountAttempted').textContent = `${data.amount || '100.00'} USDC`;
+                document.getElementById('walletAddress').textContent = shortenAddress(fullWalletAddress);
+                document.getElementById('transactionId').textContent = shortenAddress(fullTransactionId);
+
+            } catch (error) {
+                console.error('Error fetching transaction details:', error);
+                fullWalletAddress = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
+                fullTransactionId = '0x1234567890abcdef1234567890abcdef123456789012345678901234567890abcdef';
+                
+                document.getElementById('walletAddress').textContent = shortenAddress(fullWalletAddress);
+                document.getElementById('transactionId').textContent = shortenAddress(fullTransactionId);
+            }
+        }
+
+        function getErrorDetails() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const errorCode = urlParams.get('error_code');
+            const errorMessage = urlParams.get('error_message');
+
+            return {
+                code: errorCode || 'UNKNOWN_ERROR',
+                message: errorMessage || 'An unexpected error occurred during payment processing.'
+            };
+        }
+
+        function initializeErrorPage() {
+            const errorDetails = getErrorDetails();
+            fetchFailedTransactionDetails();
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeErrorPage);
+    </script>
+       <script type="module" src="./supabase-client.js"></script>
+</body>
+</html>

@@ -1,0 +1,651 @@
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@900,700,500,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Satoshi', sans-serif;
+    }
+
+    :root {
+        --primary-color: #2C3E50;
+        --secondary-color: #3498db;
+        --accent-color: #2ecc71;
+        --gradient-start: #2C3E50;
+        --gradient-end: #1a2530;
+    }
+
+    body {
+        background-color: #FFFFFF;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    body::before {
+        content: '';
+        position: absolute;
+        width: 200%;
+        height: 200%;
+        background: linear-gradient(45deg, rgba(52, 152, 219, 0.05) 0%, rgba(46, 204, 113, 0.05) 100%);
+        animation: gradientFlow 15s ease infinite;
+        z-index: 0;
+    }
+
+    @keyframes gradientFlow {
+        0% { transform: translate(-50%, -50%) rotate(0deg); }
+        100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    .floating-shapes {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+    .shape {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        filter: blur(20px);
+        animation: floatShape 8s infinite ease-in-out;
+    }
+
+    .shape:nth-child(1) {
+        width: 300px;
+        height: 300px;
+        top: 20%;
+        left: 20%;
+        background: linear-gradient(45deg, var(--secondary-color), var(--accent-color));
+        animation-delay: 0s;
+    }
+
+    .shape:nth-child(2) {
+        width: 200px;
+        height: 200px;
+        top: 60%;
+        left: 70%;
+        background: linear-gradient(45deg, var(--accent-color), var(--secondary-color));
+        animation-delay: 2s;
+    }
+
+    .shape:nth-child(3) {
+        width: 150px;
+        height: 150px;
+        top: 30%;
+        left: 60%;
+        background: linear-gradient(45deg, var(--secondary-color), var(--accent-color));
+        animation-delay: 4s;
+    }
+
+    @keyframes floatShape {
+        0%, 100% {
+            transform: translate(0, 0) rotate(0deg) scale(1);
+        }
+        50% {
+            transform: translate(20px, -20px) rotate(180deg) scale(1.1);
+        }
+    }
+
+    .checkout-container {
+        max-width: 1200px;
+        width: 100%;
+        margin: 0 auto;
+        display: flex;
+        gap: 3rem;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 24px;
+        box-shadow: 0 10px 40px rgba(44, 62, 80, 0.08);
+        overflow: hidden;
+        position: relative;
+        z-index: 2;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .buyer-details-column {
+        flex: 1;
+        padding: 3rem;
+        background: rgba(255, 255, 255, 0.5);
+        backdrop-filter: blur(5px);
+    }
+
+    .payment-summary-column {
+        flex: 0 0 400px;
+        background: rgba(255, 255, 255, 0.5);
+        padding: 3rem;
+        border-left: 1px solid rgba(44, 62, 80, 0.08);
+        display: flex;
+        flex-direction: column;
+        backdrop-filter: blur(5px);
+    }
+
+    .header-section {
+        margin-bottom: 2.5rem;
+    }
+
+    .headline {
+        background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        line-height: 1.2;
+    }
+
+    .subheading {
+        color: var(--primary-color);
+        font-size: 1.1rem;
+        line-height: 1.6;
+        opacity: 0.9;
+    }
+
+    .form-group {
+        margin-bottom: 1.8rem;
+    }
+
+    .form-group label {
+        display: flex;
+        align-items: center;
+        color: var(--primary-color);
+        margin-bottom: 0.8rem;
+        font-weight: 500;
+        font-size: 1rem;
+    }
+
+    .input-wrapper {
+        position: relative;
+        border: 2px solid rgba(44, 62, 80, 0.1);
+        border-radius: 16px;
+        transition: all 0.3s ease;
+        background: rgba(255, 255, 255, 0.9);
+        overflow: hidden;
+    }
+
+    .input-wrapper:focus-within {
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .form-group input {
+        width: 100%;
+        border: none;
+        outline: none;
+        padding: 1rem 1.2rem;
+        font-size: 1rem;
+        color: var(--primary-color);
+        background: transparent;
+    }
+
+    .form-group input::placeholder {
+        color: rgba(44, 62, 80, 0.5);
+    }
+
+    .city-country-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .privacy-note {
+        text-align: center;
+        color: var(--primary-color);
+        font-size: 0.9rem;
+        margin-top: 2rem;
+        padding: 1rem;
+        background: rgba(52, 152, 219, 0.1);
+        border-radius: 12px;
+        backdrop-filter: blur(5px);
+    }
+
+    .summary-icon-container {
+        text-align: center;
+        margin-bottom: 2rem;
+        position: relative;
+        height: 80px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .summary-icon-container .outer-shield {
+        font-size: 3.5rem;
+        color: var(--secondary-color);
+        position: absolute;
+        opacity: 0.1;
+        animation: pulse 2s infinite ease-in-out;
+    }
+
+    .summary-icon-container .inner-shield {
+        font-size: 2rem;
+        color: var(--secondary-color);
+        position: absolute;
+        animation: float 3s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+    }
+
+    @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
+    }
+
+    .total-heading {
+        background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 2rem;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+
+    .network-badge-container {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .network-badge {
+        display: inline-block;
+        background: linear-gradient(45deg, var(--secondary-color), var(--accent-color));
+        color: #FFFFFF;
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 0.5rem 1.2rem;
+        border-radius: 20px;
+        text-transform: uppercase;
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.2);
+    }
+
+    .payment-assurances {
+        margin: 2rem 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .payment-assurances li {
+        display: flex;
+        align-items: center;
+        color: var(--primary-color);
+        font-size: 1rem;
+        margin-bottom: 1rem;
+        line-height: 1.5;
+        padding: 0.8rem;
+        background: rgba(52, 152, 219, 0.1);
+        border-radius: 12px;
+        transition: all 0.3s ease;
+    }
+
+    .payment-assurances li:hover {
+        transform: translateX(5px);
+        background: rgba(52, 152, 219, 0.15);
+    }
+
+    .payment-assurances li::before {
+        content: "✅";
+        margin-right: 1rem;
+        font-size: 1.1rem;
+    }
+
+    .reminder-box {
+        background: linear-gradient(45deg, rgba(52, 152, 219, 0.1), rgba(46, 204, 113, 0.1));
+        border-radius: 16px;
+        padding: 1.2rem;
+        margin-bottom: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.1);
+        backdrop-filter: blur(5px);
+    }
+
+    .reminder-box i {
+        color: var(--secondary-color);
+        font-size: 1.2rem;
+    }
+
+    .reminder-text {
+        color: var(--primary-color);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        margin: 0;
+        font-weight: 500;
+    }
+
+    .continue-button-right {
+        width: 100%;
+        padding: 1.2rem 2rem;
+        background: linear-gradient(45deg, var(--secondary-color), var(--accent-color));
+        color: #FFFFFF;
+        border: none;
+        border-radius: 16px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.8rem;
+        margin-top: auto;
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.2);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .continue-button-right:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(52, 152, 219, 0.3);
+    }
+
+    .continue-button-right:active {
+        transform: translateY(0);
+    }
+
+    .continue-button-right::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.2),
+            transparent
+        );
+        transition: 0.5s;
+    }
+
+    .continue-button-right:hover::before {
+        left: 100%;
+    }
+
+    @media (max-width: 1024px) {
+        .checkout-container {
+            flex-direction: column;
+            gap: 2rem;
+            margin: 1rem;
+        }
+        
+        .buyer-details-column,
+        .payment-summary-column {
+            padding: 2rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        body {
+            padding: 1rem;
+        }
+
+        .checkout-container {
+            margin: 0;
+            border-radius: 16px;
+        }
+
+        .city-country-group {
+            grid-template-columns: 1fr;
+        }
+
+        .headline {
+            font-size: 1.8rem;
+        }
+    }
+</style>
+    <script>
+        console.log('Script executed early!');
+        console.log('Early URL check - href:', window.location.href);
+        console.log('Early URL check - search:', window.location.search);
+    </script>
+<div class="floating-shapes">
+    <div class="shape"></div>
+    <div class="shape"></div>
+    <div class="shape"></div>
+</div>
+
+<div class="checkout-container">
+    <div class="buyer-details-column">
+        <div class="header-section">
+            <h1 class="headline">Complete Your Order</h1>
+            <p class="subheading">Your information is encrypted and secure. We only use it to process your order.</p>
+        </div>
+        <form id="buyer-form">
+            <div class="form-group">
+                <label for="full-name">Full Name</label>
+                <div class="input-wrapper">
+                    <input type="text" id="full-name" name="full-name" placeholder="Enter your full name" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <div class="input-wrapper">
+                    <input type="email" id="email" name="email" placeholder="Enter your email address" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="address-line-1">Address Line 1</label>
+                <div class="input-wrapper">
+                    <input type="text" id="address-line-1" name="address-line-1" placeholder="Enter your street address" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="address-line-2">Address Line 2</label>
+                <div class="input-wrapper">
+                    <input type="text" id="address-line-2" name="address-line-2" placeholder="Apartment, suite, unit, etc. (optional)">
+                </div>
+            </div>
+
+            <div class="city-country-group">
+                <div class="form-group">
+                    <label for="city">City</label>
+                    <div class="input-wrapper">
+                        <input type="text" id="city" name="city" placeholder="Enter your city" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="country">Country</label>
+                    <div class="input-wrapper">
+                        <input type="text" id="country" name="country" placeholder="Enter your country" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="privacy-note">
+                Your information is encrypted and will never be shared with third parties
+            </div>
+        </form>
+    </div>
+
+    <div class="payment-summary-column">
+        <div>
+            <div class="summary-icon-container">
+                <i class="fas fa-shield-alt outer-shield"></i>
+                <i class="fas fa-shield-alt inner-shield"></i>
+            </div>
+                <h2 class="total-heading" id="total-heading"></h2>
+            <div class="network-badge-container">
+                <span class="network-badge" id="payment-chain">Loading...</span>
+            </div>
+
+            <ul class="payment-assurances">
+                <li>Secure blockchain verification</li>
+                <li>0% transaction fees</li>
+                <li>Data never stored or shared</li>
+            </ul>
+
+            <div class="reminder-box">
+                <i class="fas fa-clock"></i>
+                <p class="reminder-text">Payments typically confirm within 1-3 minutes on the blockchain</p>
+            </div>
+        </div>
+        <button type="submit" class="continue-button-right" form="buyer-form">
+            Continue to Payment <i class="fas fa-arrow-right"></i>
+        </button>
+    </div>
+</div>
+<script>
+        // Function to get URL parameters
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            console.log('Raw URL:', window.location.href); // Log full URL
+            console.log('Raw URL search params:', window.location.search); // Log search params
+            
+            const amount = params.get('amount') || '0.00';
+            const chain = params.get('chain') || 'Polygon';
+            const link_id = params.get('link_id') || 'demo';
+            const wallet_address = params.get('wallet_address') || '0x742d35Cc6634C0532925a3b844Bc454e4438f44e';
+            
+            console.log('URL Parameters:', { 
+                rawAmount: params.get('amount'),
+                parsedAmount: amount,
+                chain,
+                link_id,
+                wallet_address 
+            }); // Detailed debug log
+            return { amount, chain, link_id, wallet_address };
+        }
+
+        // Function to initialize the form
+        function initializeForm() {
+            console.log('Starting form initialization...'); // Debug log
+            
+            const params = getUrlParams();
+            console.log('Form initialization params:', params); // Debug log
+            
+            // Display payment details
+            const totalHeading = document.getElementById('total-heading');
+            console.log('Total heading element found:', totalHeading); // Debug element existence
+            
+            const paymentChain = document.getElementById('payment-chain');
+            console.log('Payment chain element found:', paymentChain); // Debug element existence
+            
+            if (totalHeading) {
+                // Format the amount with 2 decimal places and add dollar sign
+                const formattedAmount = parseFloat(params.amount).toFixed(2);
+                console.log('Formatted amount:', formattedAmount); // Debug formatted amount
+                
+                const displayText = `$${formattedAmount} USDC`;
+                console.log('Setting display text to:', displayText); // Debug display text
+                
+                totalHeading.textContent = displayText;
+                console.log('Updated total heading text:', totalHeading.textContent); // Debug updated text
+            } else {
+                console.error('Total heading element not found! Element ID: total-heading'); // Debug log
+                // Try to find the element by class as a fallback
+                const totalHeadingByClass = document.querySelector('.total-heading');
+                console.log('Found by class:', totalHeadingByClass); // Debug class search
+            }
+            
+            if (paymentChain) {
+                paymentChain.textContent = params.chain;
+                console.log('Updated payment chain:', paymentChain.textContent); // Debug log
+            } else {
+                console.error('Payment chain element not found! Element ID: payment-chain'); // Debug log
+            }
+            
+            // Store the current payment details
+            const paymentDetails = {
+                amount: params.amount,
+                chain: params.chain,
+                link_id: params.link_id,
+                wallet_address: params.wallet_address
+            };
+            
+            localStorage.setItem('currentPayment', JSON.stringify(paymentDetails));
+            console.log('Stored payment details:', paymentDetails); // Debug log
+    }
+
+        // Function to handle form submission
+        function handleFormSubmit(event) {
+            event.preventDefault();
+            console.log('Form submitted'); // Debug log
+            
+            const formData = new FormData(event.target);
+            const buyerDetails = {
+                name: formData.get('full-name'),
+                email: formData.get('email'),
+                address: {
+                    line1: formData.get('address-line-1'),
+                    line2: formData.get('address-line-2'),
+                    city: formData.get('city'),
+                    country: formData.get('country')
+                }
+            };
+            
+            // Store buyer details
+            localStorage.setItem('buyerDetails', JSON.stringify(buyerDetails));
+            console.log('Stored buyer details:', buyerDetails); // Debug log
+            
+            // Get current payment details
+            const currentPayment = JSON.parse(localStorage.getItem('currentPayment') || '{}');
+            console.log('Current payment details:', currentPayment); // Debug log
+            
+            // First, save buyer details to backend
+            const BACKEND_URL = 'https://halaxa-backend.onrender.com';
+            fetch(`${BACKEND_URL}/api/payment-links/${currentPayment.link_id}/buyer`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(buyerDetails)
+            })
+            .then(response => response.json())
+            .then(data => {
+            if (data.success) {
+                    // Redirect to payment page with all parameters
+                    const paymentUrl = `https://halaxapay.netlify.app/payment-page?amount=${currentPayment.amount}&chain=${currentPayment.chain}&link_id=${currentPayment.link_id}&wallet_address=${currentPayment.wallet_address}`;
+                    window.location.href = paymentUrl;
+            } else {
+                    throw new Error('Failed to save buyer details');
+            }
+            })
+            .catch(error => {
+                console.error('Error saving buyer details:', error);
+                alert('Failed to save your information. Please try again.');
+            });
+        }
+
+        // Initialize the form when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Page loaded, DOM content ready'); // Debug log
+            console.log('Current URL:', window.location.href); // Debug current URL
+            
+            // Verify the element exists in the DOM
+            const totalHeading = document.getElementById('total-heading');
+            console.log('Initial total heading element:', totalHeading); // Debug initial element state
+            
+            initializeForm();
+
+            // Add form submit handler
+            const form = document.getElementById('buyer-form');
+            if (form) {
+                form.addEventListener('submit', handleFormSubmit);
+                console.log('Form submit handler added'); // Debug log
+            } else {
+                console.error('Form not found! Element ID: buyer-form'); // Debug log
+            }
+        });
+</script>
+<script type="module" src="./supabase-client.js"></script>
+</body>
+</html>
