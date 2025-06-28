@@ -107,10 +107,48 @@ app.use('/api/stripe', stripeRoutes);
 app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
   try {
     const { HalaxaEngine } = await import('./Engine.js');
-    const result = await HalaxaEngine.createPaymentLink(req.user.id, req.body);
+    
+    // Get user plan
+    const { data: userPlan } = await supabase
+      .from('user_plans')
+      .select('plan_type')
+      .eq('user_id', req.user.id)
+      .single();
+    
+    const plan = userPlan?.plan_type || 'basic';
+    
+    // Format data as expected by Engine.js
+    const seller_data = {
+      seller_id: req.user.id,
+      plan: plan
+    };
+    
+    const link_data = {
+      wallet_address: req.body.wallet_address,
+      amount_usdc: req.body.amount_usdc,
+      network: req.body.network,
+      product_title: req.body.link_name, // Map link_name to product_title
+      description: req.body.description || req.body.link_name
+    };
+    
+    const result = await HalaxaEngine.createPaymentLink(seller_data, link_data);
     
     if (result.success) {
-      res.json(result);
+      // Format response for frontend
+      const response = {
+        success: true,
+        payment_link: {
+          link_id: result.data.link_id,
+          link_name: link_data.product_title,
+          amount_usdc: link_data.amount_usdc,
+          network: link_data.network,
+          wallet_address: link_data.wallet_address,
+          payment_url: result.data.share_url,
+          created_at: new Date().toISOString(),
+          is_active: true
+        }
+      };
+      res.json(response);
     } else {
       res.status(400).json(result);
     }

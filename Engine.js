@@ -325,8 +325,8 @@ export const HalaxaEngine = {
       const { count: linkCount, error: countError } = await supabase
         .from('payment_links')
         .select('*', { count: 'exact' })
-        .eq('seller_id', seller_id)
-        .eq('status', 'active');
+        .eq('user_id', seller_id)
+        .eq('is_active', true);
 
       if (countError) throw countError;
 
@@ -349,13 +349,13 @@ export const HalaxaEngine = {
         .from('payment_links')
         .insert([{
           link_id,
-          seller_id,
+          user_id: seller_id,
           wallet_address: wallet_address.trim(),
           amount_usdc: parseFloat(amount_usdc),
           network: network.toLowerCase(),
-          product_title: product_title.trim(),
+          link_name: product_title.trim(),
           description: description?.trim() || '',
-          status: 'active',
+          is_active: true,
           created_at: new Date().toISOString()
         }])
         .select()
@@ -368,7 +368,7 @@ export const HalaxaEngine = {
         data: {
           link_id,
           payment_link: paymentLink,
-          share_url: `${process.env.FRONTEND_URL}/pay/${link_id}`
+          share_url: `https://halaxapay.netlify.app/Payment%20Page.html?link=${link_id}`
         }
       };
 

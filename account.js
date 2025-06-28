@@ -354,7 +354,7 @@ router.get('/dashboard-data', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     console.log('📊 Fetching dashboard data for user:', userId.substring(0, 8) + '****');
 
-    // Fetch all dashboard data in parallel
+    // Fetch all dashboard data in parallel with error handling
     const [
       userMetrics,
       userBalances,
@@ -367,32 +367,40 @@ router.get('/dashboard-data', authenticateToken, async (req, res) => {
       networkDistributions,
       recentTransactions,
       paymentLinks
-    ] = await Promise.all([
-      supabase.from('user_metrics').select('*').eq('user_id', userId).single(),
-      supabase.from('user_balances').select('*').eq('user_id', userId).single(),
-      supabase.from('key_metrics').select('*').eq('user_id', userId).single(),
-      supabase.from('execution_metrics').select('*').eq('user_id', userId).single(),
-      supabase.from('monthly_metrics').select('*').eq('user_id', userId).single(),
-      supabase.from('transaction_insights').select('*').eq('user_id', userId).single(),
-      supabase.from('fees_saved').select('*').eq('user_id', userId).single(),
+    ] = await Promise.allSettled([
+      supabase.from('user_metrics').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('user_balances').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('key_metrics').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('execution_metrics').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('monthly_metrics').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('transaction_insights').select('*').eq('user_id', userId).maybeSingle(),
+      supabase.from('fees_saved').select('*').eq('user_id', userId).maybeSingle(),
       supabase.from('usdc_balances').select('*').eq('user_id', userId),
       supabase.from('network_distributions').select('*').eq('user_id', userId),
       supabase.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
       supabase.from('payment_links').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(5)
     ]);
 
+    // Helper function to safely extract data from Promise.allSettled results
+    const safeExtract = (result, defaultValue = {}) => {
+      if (result.status === 'fulfilled' && result.value.data) {
+        return result.value.data;
+      }
+      return defaultValue;
+    };
+
     const dashboardData = {
-      user_metrics: userMetrics.data || {},
-      user_balances: userBalances.data || {},
-      key_metrics: keyMetrics.data || {},
-      execution_metrics: executionMetrics.data || {},
-      monthly_metrics: monthlyMetrics.data || {},
-      transaction_insights: transactionInsights.data || {},
-      fees_saved: feesSaved.data || {},
-      usdc_balances: usdcBalances.data || [],
-      network_distributions: networkDistributions.data || [],
-      recent_transactions: recentTransactions.data || [],
-      payment_links: paymentLinks.data || []
+      user_metrics: safeExtract(userMetrics, {}),
+      user_balances: safeExtract(userBalances, {}),
+      key_metrics: safeExtract(keyMetrics, {}),
+      execution_metrics: safeExtract(executionMetrics, {}),
+      monthly_metrics: safeExtract(monthlyMetrics, {}),
+      transaction_insights: safeExtract(transactionInsights, {}),
+      fees_saved: safeExtract(feesSaved, {}),
+      usdc_balances: safeExtract(usdcBalances, []),
+      network_distributions: safeExtract(networkDistributions, []),
+      recent_transactions: safeExtract(recentTransactions, []),
+      payment_links: safeExtract(paymentLinks, [])
     };
 
     console.log('✅ Dashboard data fetched successfully');
@@ -425,6 +433,117 @@ router.get('/transactions', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching transactions:', error);
     res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// Get capital data for dashboard
+router.get('/capital-data', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('💰 Fetching capital data for user:', userId.substring(0, 8) + '****');
+    
+    // Fetch capital-related data from multiple tables
+    const [
+      balancesResult,
+      transactionsResult,
+      feesResult
+    ] = await Promise.allSettled([
+      supabase.from('user_balances').select('*').eq('user_id', userId),
+      supabase.from('transaction_insights').select('*').eq('user_id', userId),
+      supabase.from('fees_saved').select('*').eq('user_id', userId)
+    ]);
+    
+    // Calculate totals
+    let totalReceived = 0;
+    let totalPaidOut = 0;
+    let totalFeesSaved = 0;
+    
+    // Process balances
+    if (balancesResult.status === 'fulfilled' && balancesResult.value.data) {
+      const balances = balancesResult.value.data;
+      totalReceived = balances.reduce((sum, balance) => sum + (balance.balance || 0), 0);
+    }
+    
+    // Process transaction insights
+    if (transactionsResult.status === 'fulfilled' && transactionsResult.value.data) {
+      const transactions = transactionsResult.value.data;
+      totalPaidOut = transactions.reduce((sum, tx) => sum + (tx.total_outgoing || 0), 0);
+    }
+    
+    // Process fees saved
+    if (feesResult.status === 'fulfilled' && feesResult.value.data) {
+      const fees = feesResult.value.data;
+      totalFeesSaved = fees.reduce((sum, fee) => sum + (fee.amount_saved || 0), 0);
+    }
+    
+    const netFlow = totalReceived - totalPaidOut;
+    
+    console.log('✅ Capital data calculated successfully');
+    res.json({
+      total_received: totalReceived,
+      total_paid_out: totalPaidOut,
+      net_flow: netFlow,
+      fees_saved: totalFeesSaved,
+      last_updated: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Capital data error:', error);
+    res.status(500).json({ error: 'Failed to fetch capital data' });
+  }
+});
+
+// Get user metrics for dashboard
+router.get('/user-metrics', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('📊 Fetching user metrics for user:', userId.substring(0, 8) + '****');
+    
+    // Fetch metrics from multiple tables
+    const [
+      keyMetricsResult,
+      executionMetricsResult,
+      userMetricsResult
+    ] = await Promise.allSettled([
+      supabase.from('key_metrics').select('*').eq('user_id', userId),
+      supabase.from('execution_metrics').select('*').eq('user_id', userId),
+      supabase.from('user_metrics').select('*').eq('user_id', userId)
+    ]);
+    
+    let metricsData = {
+      transaction_velocity: 0,
+      flawless_executions: 0,
+      success_rate: 100,
+      avg_processing_time: 0,
+      total_volume: 0
+    };
+    
+    // Process key metrics
+    if (keyMetricsResult.status === 'fulfilled' && keyMetricsResult.value.data?.length > 0) {
+      const keyMetrics = keyMetricsResult.value.data[0];
+      metricsData.total_volume = keyMetrics.total_volume || 0;
+    }
+    
+    // Process execution metrics
+    if (executionMetricsResult.status === 'fulfilled' && executionMetricsResult.value.data?.length > 0) {
+      const execMetrics = executionMetricsResult.value.data[0];
+      metricsData.flawless_executions = execMetrics.flawless_executions || 0;
+      metricsData.success_rate = execMetrics.success_rate || 100;
+      metricsData.avg_processing_time = execMetrics.avg_processing_time || 0;
+    }
+    
+    // Process user metrics
+    if (userMetricsResult.status === 'fulfilled' && userMetricsResult.value.data?.length > 0) {
+      const userMetrics = userMetricsResult.value.data[0];
+      metricsData.transaction_velocity = userMetrics.transaction_velocity || 0;
+    }
+    
+    console.log('✅ User metrics calculated successfully');
+    res.json(metricsData);
+    
+  } catch (error) {
+    console.error('❌ User metrics error:', error);
+    res.status(500).json({ error: 'Failed to fetch user metrics' });
   }
 });
 
