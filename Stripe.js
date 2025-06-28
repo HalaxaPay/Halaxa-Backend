@@ -245,21 +245,51 @@ async function handleSubscriptionCancelled(subscription) {
 
 async function updateUserPlan(email, plan, stripeData = {}) {
   try {
-    const updateData = {
-      plan: plan,
-      updated_at: new Date().toISOString(),
-      ...stripeData
-    };
-
-    const { error } = await supabase
-      .from('users')
-      .update(updateData)
-      .eq('email', email);
-
-    if (error) throw error;
+    // Get user ID from Supabase Auth
+    const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+    if (listError) throw listError;
     
-    // Also log the plan change in activity logs
-    await logPlanChange(email, plan);
+    const user = users.find(u => u.email === email);
+    if (!user) {
+      console.warn(`User with email ${email} not found in auth`);
+      return;
+    }
+
+    // Check if user already has a plan entry
+    const { data: existingPlan } = await supabase
+      .from('user_plans')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existingPlan) {
+      // Update existing plan
+      const { error: updateError } = await supabase
+        .from('user_plans')
+        .update({ 
+          plan_type: plan,
+          next_billing: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          auto_renew: plan !== 'basic'
+        })
+        .eq('user_id', user.id);
+        
+      if (updateError) throw updateError;
+    } else {
+      // Create new plan entry
+      const { error: insertError } = await supabase
+        .from('user_plans')
+        .insert({
+          user_id: user.id,
+          plan_type: plan,
+          started_at: new Date().toISOString(),
+          next_billing: plan !== 'basic' ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null,
+          auto_renew: plan !== 'basic'
+        });
+        
+      if (insertError) throw insertError;
+    }
+
+    console.log(`✅ Updated user plan to ${plan} for ${email}`);
     
   } catch (err) {
     console.error('❌ Failed to update user plan:', err.message);
@@ -267,29 +297,6 @@ async function updateUserPlan(email, plan, stripeData = {}) {
   }
 }
 
-async function logPlanChange(email, newPlan) {
-  try {
-    // Get user ID
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .single();
 
-    if (userData) {
-      await supabase
-        .from('activity_logs')
-        .insert({
-          user_id: userData.id,
-          action: 'plan_upgrade',
-          details: `Plan upgraded to ${newPlan}`,
-          timestamp: new Date().toISOString()
-        });
-    }
-  } catch (error) {
-    console.error('Failed to log plan change:', error);
-    // Don't throw - this is non-critical
-  }
-}
 
 export default router; 
