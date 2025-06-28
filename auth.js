@@ -15,7 +15,7 @@ const router = express.Router();
 // ==================== USER DASHBOARD INITIALIZATION ==================== //
 
 async function initializeUserDashboardTables(userId, email, firstName, lastName) {
-  console.log('🚀 Starting backend user dashboard initialization...');
+  console.log('🚀 Starting COMPLETE user dashboard initialization for ALL tables...');
   
   // Helper function for safe inserts
   async function safeInsert(tableName, data, description) {
@@ -57,6 +57,7 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
   nextBilling.setDate(nextBilling.getDate() + 30);
 
   const initializationResults = {
+    // Original tables
     user_profiles: false,
     user_plans: false,
     user_metrics: false,
@@ -69,7 +70,23 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
     monthly_metrics: false,
     transaction_insights: false,
     user_growth: false,
-    ai_oracle_messages: false
+    ai_oracle_messages: false,
+    // NEW TABLES from ADDITIONAL_TABLES.sql
+    daily_activity: false,
+    user_subscriptions: false,
+    payment_link_stats: false,
+    network_stats: false,
+    user_achievements: false,
+    transaction_status_summary: false,
+    fee_savings_history: false,
+    capital_flows: false,
+    ai_insights: false,
+    monthly_performance: false,
+    user_activity_sessions: false,
+    payment_link_analytics: false,
+    wallet_connections: false,
+    transaction_timeline: false,
+    user_preferences: false
   };
 
   try {
@@ -212,6 +229,143 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       // Note: removed fields that don't exist in actual table
     }, 'Creating AI oracle welcome message');
 
+    // ==================== INITIALIZE ALL NEW TABLES FROM ADDITIONAL_TABLES.sql ==================== //
+    
+    // 14. Initialize daily_activity
+    initializationResults.daily_activity = await safeInsert('daily_activity', {
+      user_id: userId,
+      activity_date: new Date().toISOString().split('T')[0], // Today's date
+      transaction_count: 0,
+      total_volume_usdc: 0,
+      total_volume_usd: 0
+    }, 'Creating daily activity tracking');
+
+    // 15. Initialize user_subscriptions
+    initializationResults.user_subscriptions = await safeInsert('user_subscriptions', {
+      user_id: userId,
+      plan_tier: 'basic',
+      plan_status: 'active',
+      started_at: currentTime,
+      next_billing_date: nextBilling.toISOString(),
+      auto_renewal: true,
+      monthly_fee: 0
+    }, 'Creating user subscription');
+
+    // 16. Initialize network_stats for each network
+    console.log('🌐 Creating network stats for all networks...');
+    let networkStatsSuccess = true;
+    
+    for (const network of networks) {
+      const success = await safeInsert('network_stats', {
+        user_id: userId,
+        network: network,
+        total_volume_usdc: 0,
+        total_volume_usd: 0,
+        transaction_count: 0,
+        percentage_of_total: 0,
+        avg_gas_fee: 0,
+        recorded_date: new Date().toISOString().split('T')[0]
+      }, `Creating ${network} network stats`);
+      
+      if (!success) networkStatsSuccess = false;
+    }
+    initializationResults.network_stats = networkStatsSuccess;
+
+    // 17. Initialize user_achievements
+    initializationResults.user_achievements = await safeInsert('user_achievements', {
+      user_id: userId,
+      achievement_type: 'days_active',
+      achievement_value: 1, // First day
+      achievement_date: new Date().toISOString().split('T')[0],
+      status_level: 'bronze'
+    }, 'Creating user achievements');
+
+    // 18. Initialize transaction_status_summary for each status
+    console.log('📊 Creating transaction status summary...');
+    const statuses = ['completed', 'pending', 'failed'];
+    let statusSummarySuccess = true;
+    
+    for (const status of statuses) {
+      const success = await safeInsert('transaction_status_summary', {
+        user_id: userId,
+        status: status,
+        count: 0,
+        percentage: 0,
+        total_amount_usdc: 0,
+        recorded_date: new Date().toISOString().split('T')[0]
+      }, `Creating ${status} status summary`);
+      
+      if (!success) statusSummarySuccess = false;
+    }
+    initializationResults.transaction_status_summary = statusSummarySuccess;
+
+    // 19. Initialize capital_flows
+    console.log('💰 Creating capital flows tracking...');
+    const flowTypes = ['inflow', 'outflow'];
+    let capitalFlowsSuccess = true;
+    
+    for (const flowType of flowTypes) {
+      for (const network of networks) {
+        const success = await safeInsert('capital_flows', {
+          user_id: userId,
+          flow_type: flowType,
+          amount_usdc: 0,
+          amount_usd: 0,
+          network: network,
+          flow_date: new Date().toISOString().split('T')[0]
+        }, `Creating ${flowType} for ${network}`);
+        
+        if (!success) capitalFlowsSuccess = false;
+      }
+    }
+    initializationResults.capital_flows = capitalFlowsSuccess;
+
+    // 20. Initialize ai_insights
+    initializationResults.ai_insights = await safeInsert('ai_insights', {
+      user_id: userId,
+      insight_type: 'info',
+      title: 'Welcome!',
+      message: `Welcome to Halaxa Pay, ${firstName || 'User'}! Start by creating your first payment link.`,
+      icon_class: 'fas fa-rocket',
+      priority: 1,
+      is_active: true
+    }, 'Creating AI insights');
+
+    // 21. Initialize monthly_performance
+    const currentMonthYear = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const currentMonthName = new Date().toLocaleString('en-US', { month: 'long' });
+    
+    initializationResults.monthly_performance = await safeInsert('monthly_performance', {
+      user_id: userId,
+      month_year: currentMonthYear,
+      month_name: currentMonthName,
+      total_volume_usdc: 0,
+      total_volume_usd: 0,
+      transaction_count: 0,
+      growth_percentage: 0,
+      performance_score: 0
+    }, 'Creating monthly performance');
+
+    // 22. Initialize user_activity_sessions
+    initializationResults.user_activity_sessions = await safeInsert('user_activity_sessions', {
+      user_id: userId,
+      session_start: currentTime,
+      pages_visited: 1,
+      actions_performed: 1, // Registration counts as first action
+      last_activity: currentTime
+    }, 'Creating user activity session');
+
+    // 23. Initialize user_preferences
+    initializationResults.user_preferences = await safeInsert('user_preferences', {
+      user_id: userId,
+      default_network: 'polygon',
+      notification_email: true,
+      notification_browser: true,
+      dashboard_theme: 'dark',
+      preferred_currency: 'USD',
+      auto_refresh_interval: 30
+    }, 'Creating user preferences');
+
     // Log final results
     const successCount = Object.values(initializationResults).filter(Boolean).length;
     const totalTables = Object.keys(initializationResults).length;
@@ -316,6 +470,34 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
 
     const newUser = authData.user;
     console.log(`🔐 Created Supabase Auth user: ${newUser.id.substring(0, 8)}****`);
+
+    // 🗃️ ALSO INSERT INTO CUSTOM USERS TABLE (for compatibility with existing queries)
+    console.log('📝 Creating custom users table entry...');
+    try {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const { data: customUser, error: customUserError } = await supabase
+        .from('users')
+        .insert([{
+          id: newUser.id, // Use same UUID as Supabase Auth
+          email: email,
+          password: hashedPassword,
+          first_name: first_name,
+          last_name: last_name,
+          full_name: fullName,
+          plan: 'basic',
+          is_email_verified: true // Auto-verified since using Supabase Auth
+        }])
+        .select()
+        .single();
+
+      if (customUserError) {
+        console.warn('⚠️ Could not create custom users table entry:', customUserError.message);
+      } else {
+        console.log('✅ Custom users table entry created successfully');
+      }
+    } catch (customUserErr) {
+      console.warn('⚠️ Custom users table creation failed:', customUserErr.message);
+    }
 
     // 🚀 INITIALIZE USER DASHBOARD TABLES
     console.log(`🎯 Initializing dashboard tables for Supabase Auth user: ${newUser.id}`);
