@@ -8,11 +8,17 @@ import { supabase } from './supabase.js';
 
 const router = express.Router();
 
-// Replace with your real Stripe Secret Key (keeping as fake dummy as requested)
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy_key_12345');  
+// Stripe configuration - will use test keys in development
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+if (!stripeKey || stripeKey.includes('your_str') || stripeKey === 'sk_test_dummy_key_12345') {
+  console.warn('⚠️ STRIPE WARNING: Using development mode - Stripe features disabled');
+}
 
-// Replace with your real Stripe Webhook Signing Secret (keeping as fake dummy as requested)
-const endpointSecret = process.env.STRIPE_WEBHOOK_SIGNING_SECRET || 'whsec_dummy_secret_12345';
+const stripe = stripeKey && !stripeKey.includes('your_str') && stripeKey !== 'sk_test_dummy_key_12345' 
+  ? new Stripe(stripeKey) 
+  : null;
+
+const endpointSecret = process.env.STRIPE_WEBHOOK_SIGNING_SECRET;
 
 // Plan configurations with fake price IDs as requested
 const PLAN_CONFIGS = {
@@ -42,6 +48,25 @@ router.post('/create-checkout-session', async (req, res) => {
     const planConfig = PLAN_CONFIGS[plan];
     if (!planConfig) {
       return res.status(400).json({ error: 'Invalid plan selected' });
+    }
+
+    // Check if Stripe is configured
+    if (!stripe) {
+      console.log('🧪 DEV MODE: Simulating successful plan upgrade');
+      
+      // In development, simulate successful upgrade
+      await updateUserPlan(email, plan, {
+        stripeCustomerId: 'cus_dev_' + Date.now(),
+        stripeSessionId: 'cs_dev_' + Date.now(),
+        paymentStatus: 'completed'
+      });
+      
+      return res.json({
+        sessionId: 'dev_session_' + Date.now(),
+        url: `${process.env.FRONTEND_URL || 'https://halaxapay.netlify.app'}?upgrade=success&plan=${plan}&dev=true`,
+        devMode: true,
+        message: 'Development mode: Plan upgraded automatically'
+      });
     }
 
     // Create Stripe checkout session
