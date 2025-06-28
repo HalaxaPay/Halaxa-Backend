@@ -5,6 +5,49 @@ import { validateRequest } from './security.js';
 
 const router = express.Router();
 
+// Get user profile (for dashboard personalization)
+router.get('/profile', authenticateToken, async (req, res) => {
+  try {
+    console.log('📡 Profile endpoint called for user:', req.user?.id?.substring(0, 8) + '****');
+    
+    // Get user data from Supabase Auth (since we use auth.admin.createUser)
+    const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(req.user.id);
+    
+    if (userError || !user) {
+      console.error('❌ User not found in Supabase Auth:', userError);
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get user plan from dashboard tables
+    const { data: userPlan, error: planError } = await supabase
+      .from('user_plans')
+      .select('plan_type')
+      .eq('user_id', user.id)
+      .single();
+    
+    if (planError && planError.code !== 'PGRST116') {
+      console.warn('⚠️ Could not fetch user plan:', planError);
+    }
+    
+    const profile = {
+      id: user.id,
+      email: user.email,
+      first_name: user.user_metadata?.first_name || '',
+      last_name: user.user_metadata?.last_name || '',
+      plan: userPlan?.plan_type || 'basic',
+      created_at: user.created_at,
+      email_verified: user.email_confirmed_at ? true : false
+    };
+    
+    console.log('✅ Profile data returned successfully');
+    res.json(profile);
+    
+  } catch (error) {
+    console.error('❌ Profile endpoint error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
 // Get account details
 router.get('/:sellerId', authenticateToken, async (req, res) => {
   try {
