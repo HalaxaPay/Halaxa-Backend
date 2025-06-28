@@ -271,6 +271,11 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     console.log('✅ Processing registration for:', email, 'with full name:', fullName);
 
     // 🔐 USE SUPABASE AUTH for user creation (not custom users table)
+    console.log('🔐 Attempting to create Supabase Auth user...');
+    console.log('📧 Email:', email);
+    console.log('🔑 Service role key present:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+    console.log('🌐 Supabase URL present:', !!process.env.SUPABASE_URL);
+    
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -283,13 +288,29 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     });
 
     if (authError) {
-      console.error('Supabase Auth creation error:', authError);
-      if (authError.message.includes('already registered')) {
+      console.error('❌ Supabase Auth creation error:', {
+        message: authError.message,
+        status: authError.status,
+        code: authError.code,
+        details: authError
+      });
+      
+      if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
         return res.status(400).json({ error: 'User already exists' });
       }
+      
+      if (authError.message.includes('Invalid API key') || authError.message.includes('unauthorized')) {
+        console.error('🔑 Service role key issue - check environment variables');
+        return res.status(500).json({ 
+          error: 'Authentication service configuration error',
+          details: 'Service role key issue'
+        });
+      }
+      
       return res.status(500).json({ 
         error: 'Failed to create user',
-        details: authError.message 
+        details: authError.message,
+        code: authError.code
       });
     }
 
@@ -301,6 +322,10 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     await initializeUserDashboardTables(newUser.id, email, first_name, last_name);
 
     // Generate tokens
+    console.log('🎫 Generating JWT tokens...');
+    console.log('🔑 JWT_SECRET present:', !!process.env.JWT_SECRET);
+    console.log('🔄 JWT_REFRESH_SECRET present:', !!process.env.JWT_REFRESH_SECRET);
+    
     const accessToken = jwt.sign(
       { id: newUser.id, email: newUser.email },
       process.env.JWT_SECRET || 'your-temporary-secret-key', // Fallback for development

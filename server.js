@@ -85,7 +85,16 @@ app.get('/test', (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', supabase: 'connected' });
+  res.json({ 
+    status: 'healthy', 
+    supabase: 'connected',
+    env_check: {
+      supabase_url: !!process.env.SUPABASE_URL,
+      service_role_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      jwt_secret: !!process.env.JWT_SECRET,
+      jwt_refresh_secret: !!process.env.JWT_REFRESH_SECRET
+    }
+  });
 });
 
 // Routes
