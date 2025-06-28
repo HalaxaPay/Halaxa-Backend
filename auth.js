@@ -86,7 +86,11 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
     payment_link_analytics: false,
     wallet_connections: false,
     transaction_timeline: false,
-    user_preferences: false
+    user_preferences: false,
+    // MISSING TABLES THAT NEEDED USER ID INJECTION
+    transactions: false,
+    payment_links: false,
+    billing_history: false
   };
 
   try {
@@ -366,6 +370,113 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       auto_refresh_interval: 30
     }, 'Creating user preferences');
 
+    // ==================== MISSING TABLES THAT NEED USER ID INJECTION ==================== //
+    
+    // 24. Initialize transactions (empty initial record)
+    initializationResults.transactions = await safeInsert('transactions', {
+      user_id: userId,
+      network: 'polygon',
+      amount_usdc: 0,
+      gas_fee: 0,
+      status: 'initialized',
+      custom_tag: 'Initial Setup',
+      direction: 'in',
+      fee_savings: 0,
+      usd_equivalent: 0
+    }, 'Creating initial transaction record');
+
+    // 25. Initialize transaction_timeline (for initial transaction)
+    initializationResults.transaction_timeline = await safeInsert('transaction_timeline', {
+      transaction_id: null, // Will be updated when actual transactions occur
+      status: 'initialized',
+      timestamp: currentTime,
+      block_number: 0,
+      confirmations: 0,
+      gas_used: 0,
+      notes: 'Account setup - no transactions yet'
+    }, 'Creating transaction timeline');
+
+    // 26. Initialize payment_links (template payment link)
+    initializationResults.payment_links = await safeInsert('payment_links', {
+      link_id: `demo_${userId.substring(0, 8)}`,
+      user_id: userId,
+      seller_id: userId,
+      wallet_address: '',
+      amount_usdc: 0,
+      network: 'polygon',
+      product_title: 'Demo Payment Link',
+      description: 'Template payment link created during setup',
+      link_name: 'Demo Link',
+      is_active: false,
+      status: 'template'
+    }, 'Creating template payment link');
+
+    // 27. Initialize payment_link_stats (for the template link)
+    initializationResults.payment_link_stats = await safeInsert('payment_link_stats', {
+      payment_link_id: null, // Will be updated with actual payment link ID
+      user_id: userId,
+      total_payments: 0,
+      total_volume_usdc: 0,
+      total_volume_usd: 0,
+      conversion_rate: 0,
+      last_payment_at: null
+    }, 'Creating payment link stats');
+
+    // 28. Initialize payment_link_analytics (tracking setup)
+    initializationResults.payment_link_analytics = await safeInsert('payment_link_analytics', {
+      payment_link_id: null, // Will be updated with actual payment link ID
+      user_id: userId,
+      event_type: 'setup',
+      visitor_ip: null,
+      user_agent: 'Setup Process',
+      referrer: 'Direct Signup',
+      country: null,
+      amount_usdc: 0
+    }, 'Creating payment link analytics');
+
+    // 29. Initialize billing_history (first billing record)
+    initializationResults.billing_history = await safeInsert('billing_history', {
+      user_id: userId,
+      date: currentTime,
+      plan_type: 'basic',
+      amount_usd: 0,
+      status: 'active',
+      invoice_url: null
+    }, 'Creating initial billing history');
+
+    // 30. Initialize fee_savings_history (tracking setup)
+    initializationResults.fee_savings_history = await safeInsert('fee_savings_history', {
+      user_id: userId,
+      transaction_id: null,
+      network: 'polygon',
+      amount_usdc: 0,
+      halaxa_fee: 0,
+      traditional_fee: 0,
+      savings_amount: 0,
+      savings_percentage: 0,
+      recorded_date: new Date().toISOString().split('T')[0]
+    }, 'Creating fee savings history');
+
+    // 31. Initialize wallet_connections (placeholder for future wallets)
+    console.log('💼 Creating wallet connections for all networks...');
+    let walletConnectionsSuccess = true;
+    
+    for (const network of networks) {
+      const success = await safeInsert('wallet_connections', {
+        user_id: userId,
+        wallet_address: '',
+        network: network,
+        connection_type: 'manual',
+        is_primary: false,
+        is_active: false,
+        first_connected_at: currentTime,
+        last_used_at: currentTime
+      }, `Creating ${network} wallet connection placeholder`);
+      
+      if (!success) walletConnectionsSuccess = false;
+    }
+    initializationResults.wallet_connections = walletConnectionsSuccess;
+
     // Log final results
     const successCount = Object.values(initializationResults).filter(Boolean).length;
     const totalTables = Object.keys(initializationResults).length;
@@ -473,30 +584,70 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
 
     // 🗃️ ALSO INSERT INTO CUSTOM USERS TABLE (for compatibility with existing queries)
     console.log('📝 Creating custom users table entry...');
+    let customUserCreated = false;
+    
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
-      const { data: customUser, error: customUserError } = await supabase
+      
+      // First check if user already exists in custom table
+      const { data: existingUser, error: checkError } = await supabase
         .from('users')
-        .insert([{
-          id: newUser.id, // Use same UUID as Supabase Auth
-          email: email,
-          password: hashedPassword,
-          first_name: first_name,
-          last_name: last_name,
-          full_name: fullName,
-          plan: 'basic',
-          is_email_verified: true // Auto-verified since using Supabase Auth
-        }])
-        .select()
+        .select('id, email')
+        .eq('id', newUser.id)
         .single();
-
-      if (customUserError) {
-        console.warn('⚠️ Could not create custom users table entry:', customUserError.message);
+      
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('❌ Error checking existing user in custom table:', checkError);
+      } else if (existingUser) {
+        console.log('✅ User already exists in custom users table');
+        customUserCreated = true;
       } else {
-        console.log('✅ Custom users table entry created successfully');
+        // Insert new user into custom table
+        const { data: customUser, error: customUserError } = await supabase
+          .from('users')
+          .insert([{
+            id: newUser.id, // Use same UUID as Supabase Auth
+            email: email,
+            password: hashedPassword,
+            first_name: first_name,
+            last_name: last_name,
+            full_name: fullName,
+            plan: 'basic',
+            is_email_verified: true // Auto-verified since using Supabase Auth
+          }])
+          .select()
+          .single();
+
+        if (customUserError) {
+          console.error('❌ CRITICAL: Could not create custom users table entry:', {
+            message: customUserError.message,
+            code: customUserError.code,
+            details: customUserError.details,
+            hint: customUserError.hint
+          });
+          
+          // This is important - if custom users table fails, many dashboard queries will break
+          console.error('🚨 This will cause issues with dashboard queries that depend on the custom users table');
+        } else {
+          console.log('✅ Custom users table entry created successfully:', {
+            id: customUser.id.substring(0, 8) + '****',
+            email: customUser.email
+          });
+          customUserCreated = true;
+        }
       }
     } catch (customUserErr) {
-      console.warn('⚠️ Custom users table creation failed:', customUserErr.message);
+      console.error('❌ CRITICAL: Custom users table creation failed with exception:', {
+        message: customUserErr.message,
+        stack: customUserErr.stack
+      });
+    }
+    
+    // Log the final status
+    if (customUserCreated) {
+      console.log('✅ User successfully created in both Supabase Auth AND custom users table');
+    } else {
+      console.warn('⚠️ User created in Supabase Auth but NOT in custom users table - some features may not work');
     }
 
     // 🚀 INITIALIZE USER DASHBOARD TABLES
@@ -798,6 +949,199 @@ router.get('/session', async (req, res) => {
     return res.status(401).json({ 
       valid: false, 
       error: 'Invalid or expired session' 
+    });
+  }
+});
+
+// ==================== DEBUG/ADMIN UTILITIES ==================== //
+
+// Get all users from custom users table
+router.get('/admin/users', async (req, res) => {
+  try {
+    console.log('🔍 Fetching all users from custom users table...');
+    
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, plan, created_at, is_email_verified')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Error fetching users:', error);
+      return res.status(500).json({ 
+        error: 'Failed to fetch users', 
+        details: error.message 
+      });
+    }
+    
+    console.log(`✅ Found ${users.length} users in custom users table`);
+    
+    res.json({
+      count: users.length,
+      users: users.map(user => ({
+        ...user,
+        id: user.id.substring(0, 8) + '****' // Mask ID for security
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Exception fetching users:', error);
+    res.status(500).json({ 
+      error: 'Server error fetching users', 
+      details: error.message 
+    });
+  }
+});
+
+// Sync users from Supabase Auth to custom users table
+router.post('/admin/sync-users', async (req, res) => {
+  try {
+    console.log('🔄 Starting user sync from Supabase Auth to custom users table...');
+    
+    // Get all Supabase Auth users
+    const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+    
+    if (authError) {
+      console.error('❌ Error fetching Supabase Auth users:', authError);
+      return res.status(500).json({ 
+        error: 'Failed to fetch Supabase Auth users', 
+        details: authError.message 
+      });
+    }
+    
+    console.log(`📊 Found ${authUsers.users.length} users in Supabase Auth`);
+    
+    // Get all custom table users
+    const { data: customUsers, error: customError } = await supabase
+      .from('users')
+      .select('id');
+    
+    if (customError) {
+      console.error('❌ Error fetching custom users:', customError);
+      return res.status(500).json({ 
+        error: 'Failed to fetch custom users', 
+        details: customError.message 
+      });
+    }
+    
+    const customUserIds = new Set(customUsers.map(u => u.id));
+    console.log(`📊 Found ${customUsers.length} users in custom users table`);
+    
+    // Find missing users
+    const missingUsers = authUsers.users.filter(authUser => !customUserIds.has(authUser.id));
+    console.log(`🔍 Found ${missingUsers.length} users missing from custom table`);
+    
+    let syncedCount = 0;
+    let failedCount = 0;
+    const results = [];
+    
+    for (const authUser of missingUsers) {
+      try {
+        const { data: syncedUser, error: syncError } = await supabase
+          .from('users')
+          .insert([{
+            id: authUser.id,
+            email: authUser.email,
+            password: '', // Unknown password - will need manual reset
+            first_name: authUser.user_metadata?.first_name || '',
+            last_name: authUser.user_metadata?.last_name || '',
+            full_name: authUser.user_metadata?.full_name || '',
+            plan: 'basic',
+            is_email_verified: authUser.email_confirmed_at ? true : false
+          }])
+          .select()
+          .single();
+        
+        if (syncError) {
+          console.error(`❌ Failed to sync user ${authUser.id}:`, syncError.message);
+          failedCount++;
+          results.push({
+            id: authUser.id.substring(0, 8) + '****',
+            email: authUser.email,
+            status: 'failed',
+            error: syncError.message
+          });
+        } else {
+          console.log(`✅ Synced user ${authUser.id.substring(0, 8)}****`);
+          syncedCount++;
+          results.push({
+            id: authUser.id.substring(0, 8) + '****',
+            email: authUser.email,
+            status: 'synced'
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Exception syncing user ${authUser.id}:`, error.message);
+        failedCount++;
+        results.push({
+          id: authUser.id.substring(0, 8) + '****',
+          email: authUser.email,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+    
+    console.log(`🎉 Sync complete: ${syncedCount} synced, ${failedCount} failed`);
+    
+    res.json({
+      message: 'User sync completed',
+      authUsers: authUsers.users.length,
+      customUsers: customUsers.length,
+      missingUsers: missingUsers.length,
+      syncedCount,
+      failedCount,
+      results
+    });
+  } catch (error) {
+    console.error('❌ Exception during user sync:', error);
+    res.status(500).json({ 
+      error: 'Server error during sync', 
+      details: error.message 
+    });
+  }
+});
+
+// Delete user from both Supabase Auth and custom table
+router.delete('/admin/users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log(`🗑️ Deleting user ${userId.substring(0, 8)}**** from both tables...`);
+    
+    // Delete from custom users table first
+    const { error: customDeleteError } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', userId);
+    
+    if (customDeleteError) {
+      console.error('❌ Error deleting from custom users table:', customDeleteError);
+    } else {
+      console.log('✅ Deleted from custom users table');
+    }
+    
+    // Delete from Supabase Auth
+    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
+    
+    if (authDeleteError) {
+      console.error('❌ Error deleting from Supabase Auth:', authDeleteError);
+    } else {
+      console.log('✅ Deleted from Supabase Auth');
+    }
+    
+    if (customDeleteError || authDeleteError) {
+      return res.status(500).json({
+        error: 'Partial deletion failure',
+        customTableError: customDeleteError?.message,
+        authError: authDeleteError?.message
+      });
+    }
+    
+    console.log('✅ User completely deleted from both systems');
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('❌ Exception deleting user:', error);
+    res.status(500).json({ 
+      error: 'Server error deleting user', 
+      details: error.message 
     });
   }
 });
