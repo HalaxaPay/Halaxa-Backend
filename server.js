@@ -14,18 +14,48 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS configuration
+// CORS configuration - More explicit for newer CORS versions
 const corsOptions = {
-    origin: process.env.FRONTEND_URL || 'https://halaxapay.netlify.app',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        const allowedOrigins = [
+            'https://halaxapay.netlify.app',
+            'http://localhost:3000',
+            'http://localhost:5173',
+            'http://127.0.0.1:5173',
+            process.env.FRONTEND_URL
+        ].filter(Boolean);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('CORS blocked origin:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: [
+        'Content-Type', 
+        'Authorization', 
+        'Accept', 
+        'Origin', 
+        'X-Requested-With',
+        'Access-Control-Allow-Headers',
+        'Access-Control-Allow-Origin'
+    ],
     credentials: true,
     preflightContinue: false,
-    optionsSuccessStatus: 204
+    optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
 };
 
 // Apply CORS and JSON parsing to all routes EXCEPT Stripe webhook
 app.use('/api/stripe/webhook', stripeRoutes); // Mount webhook BEFORE JSON parsing
+
+// Enable pre-flight requests for all routes
+app.options('*', cors(corsOptions));
+
 app.use(cors(corsOptions));
 app.use(express.json());
 
@@ -35,9 +65,22 @@ app.all('*', (req, res, next) => {
     next(); // Pass control to the next middleware/route handler
 });
 
-// Basic test route
+// Basic test route with CORS headers
 app.get('/test', (req, res) => {
-  res.json({ message: 'Halaxa backend is running!', timestamp: new Date().toISOString() });
+  console.log('🧪 Test route accessed from origin:', req.headers.origin);
+  
+  // Manually set CORS headers as backup
+  res.header('Access-Control-Allow-Origin', 'https://halaxapay.netlify.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  res.json({ 
+    message: 'Halaxa backend is running!', 
+    timestamp: new Date().toISOString(),
+    origin: req.headers.origin,
+    cors: 'enabled'
+  });
 });
 
 // Health check
