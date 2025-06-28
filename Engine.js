@@ -13,20 +13,22 @@ import { supabase } from './supabase.js';
 
 dotenv.config();
 
-// Helper to generate a unique ID
-function generateId(length = 9) {
-  return crypto.randomBytes(length).toString('hex');
-}
+console.log('ENGINE.JS: Payment verification engine loading...');
 
-// ==================== HALAXA PAYMENT LINK ENGINE ==================== //
+// ==================== HALAXA PAYMENT VERIFICATION ENGINE ==================== //
 
-// Alchemy API Endpoints (using environment variables with dummy fallbacks)
+// Alchemy API Endpoints
 const POLYGON_ALCHEMY_URL = `https://polygon-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_POLYGON_API_KEY}`;
 const SOLANA_ALCHEMY_URL = `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_SOLANA_API_KEY}`;
 
 // USDC Contract Addresses  
-const POLYGON_USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'; // Polygon USDC
-const SOLANA_USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // Solana USDC
+const POLYGON_USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+const SOLANA_USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+// Helper to generate unique IDs
+function generateId(length = 9) {
+  return crypto.randomBytes(length).toString('hex');
+}
 
 export const HalaxaEngine = {
   

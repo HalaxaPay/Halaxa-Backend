@@ -8,6 +8,7 @@ import stripeRoutes from './Stripe.js';
 import { supabase } from './supabase.js';
 import { validateEmail, validatePassword, validateRequest } from './security.js';
 import { DetectionAPI } from './Detection.js';
+import { authenticateToken } from './authMiddleware.js';
 
 dotenv.config();
 
@@ -101,6 +102,68 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/stripe', stripeRoutes);
+
+// Payment Link Routes (using Engine.js)
+app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.createPaymentLink(req.user.id, req.body);
+    
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    console.error('Payment link creation error:', error);
+    res.status(500).json({ error: 'Failed to create payment link' });
+  }
+});
+
+app.get('/api/payment-links', authenticateToken, async (req, res) => {
+  try {
+    const { data: paymentLinks, error } = await supabase
+      .from('payment_links')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ payment_links: paymentLinks || [] });
+  } catch (error) {
+    console.error('Error fetching payment links:', error);
+    res.status(500).json({ error: 'Failed to fetch payment links' });
+  }
+});
+
+app.get('/api/payment-links/:linkId', async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.getPaymentLinkInfo(req.params.linkId);
+    
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(404).json(result);
+    }
+  } catch (error) {
+    console.error('Error fetching payment link:', error);
+    res.status(500).json({ error: 'Failed to fetch payment link' });
+  }
+});
+
+app.post('/api/payment-links/:linkId/verify', async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.processPaymentVerification(req.params.linkId, req.body);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    res.status(500).json({ error: 'Payment verification failed' });
+  }
+});
 
 // Detection System API Routes
 app.get('/api/detection/status', (req, res) => {

@@ -348,4 +348,84 @@ router.post('/manual-upgrade', authenticateToken, async (req, res) => {
   }
 });
 
+// Get user dashboard data
+router.get('/dashboard-data', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('📊 Fetching dashboard data for user:', userId.substring(0, 8) + '****');
+
+    // Fetch all dashboard data in parallel
+    const [
+      userMetrics,
+      userBalances,
+      keyMetrics,
+      executionMetrics,
+      monthlyMetrics,
+      transactionInsights,
+      feesSaved,
+      usdcBalances,
+      networkDistributions,
+      recentTransactions,
+      paymentLinks
+    ] = await Promise.all([
+      supabase.from('user_metrics').select('*').eq('user_id', userId).single(),
+      supabase.from('user_balances').select('*').eq('user_id', userId).single(),
+      supabase.from('key_metrics').select('*').eq('user_id', userId).single(),
+      supabase.from('execution_metrics').select('*').eq('user_id', userId).single(),
+      supabase.from('monthly_metrics').select('*').eq('user_id', userId).single(),
+      supabase.from('transaction_insights').select('*').eq('user_id', userId).single(),
+      supabase.from('fees_saved').select('*').eq('user_id', userId).single(),
+      supabase.from('usdc_balances').select('*').eq('user_id', userId),
+      supabase.from('network_distributions').select('*').eq('user_id', userId),
+      supabase.from('transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(10),
+      supabase.from('payment_links').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(5)
+    ]);
+
+    const dashboardData = {
+      user_metrics: userMetrics.data || {},
+      user_balances: userBalances.data || {},
+      key_metrics: keyMetrics.data || {},
+      execution_metrics: executionMetrics.data || {},
+      monthly_metrics: monthlyMetrics.data || {},
+      transaction_insights: transactionInsights.data || {},
+      fees_saved: feesSaved.data || {},
+      usdc_balances: usdcBalances.data || [],
+      network_distributions: networkDistributions.data || [],
+      recent_transactions: recentTransactions.data || [],
+      payment_links: paymentLinks.data || []
+    };
+
+    console.log('✅ Dashboard data fetched successfully');
+    res.json(dashboardData);
+
+  } catch (error) {
+    console.error('❌ Dashboard data fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+  }
+});
+
+// Get user transactions with pagination
+router.get('/transactions', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const { data: transactions, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    res.json({ transactions: transactions || [] });
+
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
 export default router; 
