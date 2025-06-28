@@ -5,6 +5,31 @@ import { validateRequest } from './security.js';
 
 const router = express.Router();
 
+// Trigger detection for current user (manual refresh)
+router.post('/trigger-detection', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 Manual detection triggered for user:', req.user?.id?.substring(0, 8) + '****');
+    
+    // Import and run detection for this user
+    const { DetectionAPI } = await import('./Detection.js');
+    await DetectionAPI.runForUser(req.user.id);
+    
+    console.log('✅ Manual detection completed successfully');
+    res.json({ 
+      success: true, 
+      message: 'Detection completed successfully',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Manual detection failed:', error);
+    res.status(500).json({ 
+      error: 'Detection failed', 
+      details: error.message 
+    });
+  }
+});
+
 // Get user profile (for dashboard personalization)
 router.get('/profile', authenticateToken, async (req, res) => {
   try {

@@ -321,6 +321,16 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     console.log(`🎯 Initializing dashboard tables for Supabase Auth user: ${newUser.id}`);
     await initializeUserDashboardTables(newUser.id, email, first_name, last_name);
 
+    // 🔍 START DETECTION FOR NEW USER
+    console.log(`🔍 Starting detection system for new user: ${newUser.id.substring(0, 8)}****`);
+    try {
+      const { DetectionAPI } = await import('./Detection.js');
+      await DetectionAPI.runForUser(newUser.id);
+      console.log(`✅ Initial detection completed for new user`);
+    } catch (detectionError) {
+      console.warn('⚠️ Detection system not available during registration:', detectionError.message);
+    }
+
     // Generate tokens
     console.log('🎫 Generating JWT tokens...');
     console.log('🔑 JWT_SECRET present:', !!process.env.JWT_SECRET);
@@ -376,6 +386,20 @@ router.post('/login', validateEmail, validateRequest, async (req, res) => {
 
     const user = authData.user;
     console.log(`🔐 Supabase Auth login success: ${user.id.substring(0, 8)}****`);
+
+    // 🔍 START DETECTION FOR RETURNING USER
+    console.log(`🔍 Starting detection system for returning user: ${user.id.substring(0, 8)}****`);
+    try {
+      const { DetectionAPI } = await import('./Detection.js');
+      // Run detection in background (don't wait for completion)
+      DetectionAPI.runForUser(user.id).then(() => {
+        console.log(`✅ Detection completed for returning user: ${user.id.substring(0, 8)}****`);
+      }).catch(error => {
+        console.warn(`⚠️ Detection failed for user ${user.id.substring(0, 8)}****:`, error.message);
+      });
+    } catch (detectionError) {
+      console.warn('⚠️ Detection system not available during login:', detectionError.message);
+    }
 
     // Generate tokens
     const accessToken = jwt.sign(
