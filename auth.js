@@ -250,16 +250,25 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
 // Register endpoint
 router.post('/register', validateEmail, validatePassword, validateRequest, async (req, res) => {
   try {
-    const { email, password, fullName } = req.body;
+    console.log('📥 Registration request received:', { 
+      email: req.body.email, 
+      hasPassword: !!req.body.password,
+      first_name: req.body.first_name,
+      last_name: req.body.last_name 
+    });
 
-    let first_name = null;
-    let last_name = null;
+    const { email, password, first_name, last_name } = req.body;
 
-    if (fullName) {
-      const nameParts = fullName.split(' ');
-      first_name = nameParts[0] || null;
-      last_name = nameParts.slice(1).join(' ') || null;
+    // Validate required fields
+    if (!email || !password) {
+      console.error('❌ Missing required fields:', { email: !!email, password: !!password });
+      return res.status(400).json({ error: 'Email and password are required' });
     }
+
+    // Use the first_name and last_name directly from the frontend
+    // Create fullName for user metadata
+    const fullName = [first_name, last_name].filter(Boolean).join(' ');
+    console.log('✅ Processing registration for:', email, 'with full name:', fullName);
 
     // 🔐 USE SUPABASE AUTH for user creation (not custom users table)
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
