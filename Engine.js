@@ -25,9 +25,14 @@ const SOLANA_ALCHEMY_URL = `https://solana-mainnet.g.alchemy.com/v2/${process.en
 const POLYGON_USDC_CONTRACT = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 const SOLANA_USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-// Helper to generate unique IDs
-function generateId(length = 9) {
-  return crypto.randomBytes(length).toString('hex');
+// Helper to generate unique IDs that fit database constraints
+function generateId(length = 8) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 }
 
 export const HalaxaEngine = {
@@ -297,22 +302,34 @@ export const HalaxaEngine = {
    * Create a new payment link
    * Used by the payment link creation API
    */
-  async createPaymentLink(seller_data, link_data) {
+  async createPaymentLink(user_data, link_data) {
     try {
-      const { seller_id, plan } = seller_data;
+      const { user_id, plan } = user_data;
       const { wallet_address, amount_usdc, network, product_title, description } = link_data;
 
       // 🚨 CRITICAL VALIDATION: Ensure user ID is present
-      console.log("🔍 DEBUG - Validating seller_id:", seller_id);
-      console.log("🔍 DEBUG - seller_id type:", typeof seller_id);
-      console.log("🔍 DEBUG - seller_id truthy:", !!seller_id);
+      console.log("🔍 DEBUG - Validating user_id:", user_id);
+      console.log("🔍 DEBUG - user_id type:", typeof user_id);
+      console.log("🔍 DEBUG - user_id length:", user_id?.length);
+      console.log("🔍 DEBUG - user_id truthy:", !!user_id);
       
-      if (!seller_id) {
-        console.error('❌ CRITICAL: seller_id is null or undefined!', { seller_data, link_data });
-        return { success: false, error: 'User authentication required - seller_id missing' };
+      if (!user_id) {
+        console.error('❌ CRITICAL: user_id is null or undefined!', { user_data, link_data });
+        return { success: false, error: 'User authentication required - user_id missing' };
       }
 
-      console.log("🔐 Creating payment link for user:", seller_id);
+      // 🚨 DATABASE CONSTRAINT FIX: Convert long UUID to short ID for database
+      let database_user_id = user_id;
+      
+      if (user_id.length > 8) {
+        // Create a consistent 8-character hash from the UUID
+        const crypto = await import('crypto');
+        const hash = crypto.createHash('sha256').update(user_id).digest('hex');
+        database_user_id = hash.substring(0, 8);
+        console.log(`🔄 Converting long user_id to database format: ${user_id.substring(0, 8)}... -> ${database_user_id}`);
+      }
+
+      console.log("🔐 Creating payment link for user:", user_id);
       console.log("📊 User plan:", plan);
       console.log("💰 Payment link data:", { 
         wallet_address, 
@@ -356,7 +373,7 @@ export const HalaxaEngine = {
       const { count: linkCount, error: countError } = await supabase
         .from('payment_links')
         .select('*', { count: 'exact' })
-        .eq('user_id', seller_id)
+        .eq('user_id', database_user_id)
         .eq('is_active', true);
 
       if (countError) {
@@ -364,7 +381,7 @@ export const HalaxaEngine = {
         throw countError;
       }
 
-      console.log(`📈 Current active links for user ${seller_id}: ${linkCount}`);
+      console.log(`📈 Current active links for database_user_id ${database_user_id}: ${linkCount}`);
 
       const planLimits = {
         basic: 1,
@@ -378,15 +395,15 @@ export const HalaxaEngine = {
         return { success: false, error: `Plan limit reached. ${plan} plan allows ${maxLinks} active links.` };
       }
 
-      // Generate unique link ID
-      const link_id = 'halaxa_' + generateId(12);
+      // Generate unique link ID (8 characters max for database constraint)
+      const link_id = generateId(8);
       console.log("🆔 Generated link ID:", link_id);
 
-      // 🚨 CRITICAL FIX: Include both user_id AND seller_id in the insert
+      // 🚨 SIMPLIFIED: Only use user_id (removed seller_id as requested)
+      // Using database_user_id to fit VARCHAR(8) constraint
       const insertData = {
           link_id,
-        user_id: seller_id,        // ✅ Set user_id
-        seller_id: seller_id,      // ✅ Set seller_id (FIXED)
+          user_id: database_user_id,
           wallet_address: wallet_address.trim(),
           amount_usdc: parseFloat(amount_usdc),
           network: network.toLowerCase(),
@@ -780,10 +797,20 @@ export const HalaxaEngine = {
    */
   async getUserPaymentLinks(user_id, limit = 50) {
     try {
+      // 🚨 DATABASE CONSTRAINT FIX: Convert long UUID to short ID for database query
+      let database_user_id = user_id;
+      
+      if (user_id.length > 8) {
+        // Create a consistent 8-character hash from the UUID
+        const crypto = await import('crypto');
+        const hash = crypto.createHash('sha256').update(user_id).digest('hex');
+        database_user_id = hash.substring(0, 8);
+      }
+
       const { data: paymentLinks, error } = await supabase
         .from('payment_links')
         .select('*')
-        .eq('user_id', user_id)
+        .eq('user_id', database_user_id)
         .order('created_at', { ascending: false })
         .limit(limit);
 

@@ -192,8 +192,8 @@ app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
     console.log("📈 User plan determined:", plan);
     
     // Format data as expected by Engine.js
-    const seller_data = {
-      seller_id: req.user.id,
+    const user_data = {
+      user_id: req.user.id,
       plan: plan
     };
     
@@ -205,9 +205,9 @@ app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
       description: req.body.description || req.body.link_name
     };
     
-    console.log("🎯 Calling HalaxaEngine.createPaymentLink with:", { seller_data, link_data });
+    console.log("🎯 Calling HalaxaEngine.createPaymentLink with:", { user_data, link_data });
     
-    const result = await HalaxaEngine.createPaymentLink(seller_data, link_data);
+    const result = await HalaxaEngine.createPaymentLink(user_data, link_data);
     
     console.log("📥 Engine.js result:", result);
     console.log("✅ Engine.js success:", result.success);
