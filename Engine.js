@@ -2445,8 +2445,7 @@ export const HalaxaEngine = {
       const { data: balances, error } = await supabase
         .from('usdc_balances')
         .select('*')
-        .eq('user_id', user_id)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user_id);
 
       if (error) throw error;
 
@@ -2473,7 +2472,7 @@ export const HalaxaEngine = {
           total_balance: totalBalance,
           network_breakdown: networkBreakdown,
           unique_wallets: uniqueWallets,
-          last_updated: balances?.[0]?.created_at || null
+          last_updated: new Date().toISOString() // Use current timestamp instead
         }
       };
 
@@ -2769,7 +2768,7 @@ export const HalaxaEngine = {
     try {
       let query = supabase
         .from('user_balances')
-        .select('user_id, wallet_address, is_active, usdc_polygon, usdc_tron, usdc_solana, usd_equivalent, last_active, user_profiles(name, initials)');
+        .select('user_id, wallet_address, is_active, usdc_polygon, usdc_tron, usdc_solana, usd_equivalent, last_active');
 
       if (filter === 'Active') {
         query = query.eq('is_active', true);
@@ -2794,14 +2793,31 @@ export const HalaxaEngine = {
    */
   async fetchUserProfile(userId) {
     try {
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('full_name, email, is_verified, created_at, traits, subscription_type')
-        .eq('id', userId)
+      // Get user data from Supabase Auth (since we use auth.admin.createUser)
+      const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
+      
+      if (userError || !user) {
+        console.error('❌ User not found in Supabase Auth:', userError);
+        return { success: false, error: 'User not found', data: null };
+      }
+      
+      // Get user plan from user_plans table
+      const { data: userPlan, error: planError } = await supabase
+        .from('user_plans')
+        .select('plan_type')
+        .eq('user_id', userId)
         .single();
-
-      if (error) throw error;
-      return { success: true, data: user };
+      
+      const profileData = {
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.first_name || user.email?.split('@')[0] || 'User',
+        plan: userPlan?.plan_type || 'basic',
+        created_at: user.created_at,
+        email_verified: user.email_confirmed_at ? true : false
+      };
+      
+      return { success: true, data: profileData };
     } catch (error) {
       console.error('Error fetching user profile:', error);
       return { success: false, error: 'Failed to fetch user profile', data: null };
@@ -2817,10 +2833,10 @@ export const HalaxaEngine = {
         .from('user_metrics')
         .select('days_active, status_level, current_streak')
         .eq('user_id', userId)
-        .single();
+        .limit(1);
 
       if (error) throw error;
-      return { success: true, data: metrics };
+      return { success: true, data: metrics?.[0] || { days_active: 0, status_level: 'beginner', current_streak: 0 } };
     } catch (error) {
       console.error('Error fetching user journey data:', error);
       return { success: false, error: 'Failed to fetch user journey data', data: null };
@@ -3058,7 +3074,7 @@ export const HalaxaEngine = {
     try {
       const { data: transactions, error, count } = await supabase
     .from('transactions')
-        .select('id, amount_usdc, network, status, created_at, transaction_hash, wallet_address, usd_equivalent', { count: 'exact' })
+        .select('id, amount_usdc, network, status, created_at, tx_hash, wallet_address, usd_equivalent', { count: 'exact' })
         .eq('user_id', user_id)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);

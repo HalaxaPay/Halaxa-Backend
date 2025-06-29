@@ -857,6 +857,71 @@ router.get('/order-analytics', authenticateToken, async (req, res) => {
   }
 });
 
+// Get user profile with plan (for access control)
+router.get('/profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('👤 Fetching user profile for:', userId.substring(0, 8) + '****');
+    
+    const result = await Engine.fetchUserProfile(userId);
+    
+    if (result.success) {
+      console.log('✅ Profile retrieved with plan:', result.data.plan);
+      res.json(result.data);
+    } else {
+      console.warn('⚠️ Profile fetch failed:', result.error);
+      res.status(404).json({
+        error: result.error,
+        plan: 'basic' // fallback
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Profile endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch profile',
+      plan: 'basic' // fallback
+    });
+  }
+});
+
+// Get user plan status (for access control)
+router.get('/plan-status', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('📋 Fetching plan status for user:', userId.substring(0, 8) + '****');
+    
+    // Get user plan from user_plans table
+    const { data: userPlan, error } = await supabase
+      .from('user_plans')
+      .select('plan_type, started_at, next_billing, auto_renewal')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') {
+      console.warn('⚠️ Could not fetch user plan:', error);
+    }
+    
+    const planData = {
+      currentPlan: userPlan?.plan_type || 'basic',
+      planDetails: userPlan || null,
+      fetched_at: new Date().toISOString()
+    };
+    
+    console.log('✅ Plan status retrieved:', planData.currentPlan);
+    res.json(planData);
+    
+  } catch (error) {
+    console.error('❌ Plan status error:', error);
+    res.json({
+      currentPlan: 'basic',
+      planDetails: null,
+      error: error.message,
+      fetched_at: new Date().toISOString()
+    });
+  }
+});
+
 console.log('✅ ACCOUNT.JS: All Engine.js calculation endpoints loaded successfully');
 
 export default router; 
