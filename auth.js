@@ -399,8 +399,7 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
     // 26. Initialize payment_links (template payment link)
     initializationResults.payment_links = await safeInsert('payment_links', {
       link_id: `demo_${userId.substring(0, 8)}`,
-      user_id: userId,
-      seller_id: userId,
+      user_id: userId, // ✅ Keep full UUID for database compatibility
       wallet_address: '',
       amount_usdc: 0,
       network: 'polygon',

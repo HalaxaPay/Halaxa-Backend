@@ -318,16 +318,9 @@ export const HalaxaEngine = {
         return { success: false, error: 'User authentication required - user_id missing' };
       }
 
-      // 🚨 DATABASE CONSTRAINT FIX: Convert long UUID to short ID for database
-      let database_user_id = user_id;
-      
-      if (user_id.length > 8) {
-        // Create a consistent 8-character hash from the UUID
-        const crypto = await import('crypto');
-        const hash = crypto.createHash('sha256').update(user_id).digest('hex');
-        database_user_id = hash.substring(0, 8);
-        console.log(`🔄 Converting long user_id to database format: ${user_id.substring(0, 8)}... -> ${database_user_id}`);
-      }
+      // 🚨 KEEP FULL UUID: Database expects UUID format
+      const database_user_id = user_id;
+      console.log(`🔗 Using full UUID for database: ${user_id}`);
 
       console.log("🔐 Creating payment link for user:", user_id);
       console.log("📊 User plan:", plan);
@@ -395,8 +388,8 @@ export const HalaxaEngine = {
         return { success: false, error: `Plan limit reached. ${plan} plan allows ${maxLinks} active links.` };
       }
 
-      // Generate unique link ID (8 characters max for database constraint)
-      const link_id = generateId(8);
+      // Generate unique link ID (6 characters to be safe for database constraint)
+      const link_id = generateId(6);
       console.log("🆔 Generated link ID:", link_id);
 
       // 🚨 SIMPLIFIED: Only use user_id (removed seller_id as requested)
@@ -797,15 +790,8 @@ export const HalaxaEngine = {
    */
   async getUserPaymentLinks(user_id, limit = 50) {
     try {
-      // 🚨 DATABASE CONSTRAINT FIX: Convert long UUID to short ID for database query
-      let database_user_id = user_id;
-      
-      if (user_id.length > 8) {
-        // Create a consistent 8-character hash from the UUID
-        const crypto = await import('crypto');
-        const hash = crypto.createHash('sha256').update(user_id).digest('hex');
-        database_user_id = hash.substring(0, 8);
-      }
+      // 🚨 KEEP FULL UUID: Database expects UUID format
+      const database_user_id = user_id;
 
       const { data: paymentLinks, error } = await supabase
         .from('payment_links')
