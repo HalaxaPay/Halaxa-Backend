@@ -122,9 +122,56 @@ app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
     console.log("📧 User email:", req.user?.email);
     console.log("📝 Request body:", req.body);
     
+    // 🚨 CRITICAL FIELD VALIDATION: Check each required field
+    console.log("🔍 FIELD VALIDATION:");
+    console.log("💰 amount_usdc:", req.body.amount_usdc, "type:", typeof req.body.amount_usdc);
+    console.log("🏦 wallet_address:", req.body.wallet_address, "type:", typeof req.body.wallet_address);
+    console.log("📛 link_name:", req.body.link_name, "type:", typeof req.body.link_name);
+    console.log("🌐 network:", req.body.network, "type:", typeof req.body.network);
+    console.log("📝 description:", req.body.description, "type:", typeof req.body.description);
+    
     if (!req.user?.id) {
       console.error("❌ CRITICAL: No user ID found in JWT token!");
-      return res.status(401).json({ error: 'User authentication failed - no user ID' });
+      return res.status(401).json({ success: false, error: 'User authentication failed - no user ID' });
+    }
+
+    // 🚨 SERVER-SIDE VALIDATION: Validate all required fields before calling Engine.js
+    const validationErrors = [];
+    
+    if (!req.body.amount_usdc || isNaN(req.body.amount_usdc) || parseFloat(req.body.amount_usdc) <= 0) {
+      validationErrors.push('amount_usdc must be a positive number');
+    }
+    
+    if (!req.body.wallet_address || typeof req.body.wallet_address !== 'string' || req.body.wallet_address.trim().length === 0) {
+      validationErrors.push('wallet_address is required and cannot be empty');
+    }
+    
+    if (!req.body.link_name || typeof req.body.link_name !== 'string' || req.body.link_name.trim().length === 0) {
+      validationErrors.push('link_name is required and cannot be empty');
+    }
+    
+    if (!req.body.network || typeof req.body.network !== 'string' || req.body.network.trim().length === 0) {
+      validationErrors.push('network is required and cannot be empty');
+    }
+    
+    if (!['polygon', 'solana'].includes(req.body.network?.toLowerCase())) {
+      validationErrors.push('network must be either "polygon" or "solana"');
+    }
+    
+    if (validationErrors.length > 0) {
+      console.error("❌ VALIDATION ERRORS:", validationErrors);
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Validation failed', 
+        details: validationErrors,
+        received_fields: {
+          amount_usdc: req.body.amount_usdc,
+          wallet_address: req.body.wallet_address,
+          link_name: req.body.link_name,
+          network: req.body.network,
+          description: req.body.description
+        }
+      });
     }
 
     const { HalaxaEngine } = await import('./Engine.js');
@@ -162,6 +209,12 @@ app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
     
     const result = await HalaxaEngine.createPaymentLink(seller_data, link_data);
     
+    console.log("📥 Engine.js result:", result);
+    console.log("✅ Engine.js success:", result.success);
+    if (!result.success) {
+      console.error("❌ Engine.js error:", result.error);
+    }
+    
     if (result.success) {
       // Format response for frontend
       const response = {
@@ -182,8 +235,20 @@ app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
       res.status(400).json(result);
     }
   } catch (error) {
-    console.error('Payment link creation error:', error);
-    res.status(500).json({ error: 'Failed to create payment link' });
+    console.error('❌ CRITICAL: Payment link creation error:', error);
+    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Error message:', error.message);
+    
+    // Return specific error information for debugging
+    res.status(500).json({ 
+      success: false,
+      error: 'Internal server error during payment link creation',
+      details: error.message,
+      debug_info: {
+        error_type: error.constructor.name,
+        timestamp: new Date().toISOString()
+      }
+    });
   }
 });
 

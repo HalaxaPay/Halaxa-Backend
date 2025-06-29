@@ -423,8 +423,21 @@ export const HalaxaEngine = {
       };
 
     } catch (error) {
-      console.error('Error creating payment link:', error);
-      return { success: false, error: 'Failed to create payment link' };
+      console.error('❌ Engine.js createPaymentLink error:', error);
+      console.error('❌ Error type:', error.constructor.name);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      
+      // Return specific error information
+      return { 
+        success: false, 
+        error: 'Database error during payment link creation',
+        details: error.message,
+        debug_info: {
+          error_type: error.constructor.name,
+          timestamp: new Date().toISOString()
+        }
+      };
     }
   },
 
