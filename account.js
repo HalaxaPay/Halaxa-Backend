@@ -736,4 +736,127 @@ router.get('/user-metrics', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== COMPREHENSIVE ENGINE.JS CALCULATION ENDPOINTS ==================== //
+
+// Get ALL dashboard analytics using Engine.js comprehensive analytics
+router.get('/dashboard-analytics-complete', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('🎯 Fetching COMPLETE dashboard analytics for user:', userId.substring(0, 8) + '****');
+    
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.getAllDashboardAnalytics(userId);
+    
+    if (result.success) {
+      console.log('✅ Complete dashboard analytics loaded successfully');
+      res.json(result.data);
+    } else {
+      console.warn('⚠️ Dashboard analytics failed:', result.error);
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('❌ Complete dashboard analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch complete dashboard analytics' });
+  }
+});
+
+// Monthly Constellation Data (12-month revenue analysis)
+router.get('/monthly-constellation', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.getMonthlyConstellationData(req.user.id);
+    res.json(result.success ? result.data : { error: result.error });
+  } catch (error) {
+    console.error('Monthly constellation error:', error);
+    res.status(500).json({ error: 'Failed to fetch monthly constellation data' });
+  }
+});
+
+// AI Financial Insights (Predictive Analytics)
+router.get('/ai-insights', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.getAIFinancialInsightsData(req.user.id);
+    res.json(result.success ? result.data : { error: result.error });
+  } catch (error) {
+    console.error('AI insights error:', error);
+    res.status(500).json({ error: 'Failed to fetch AI insights' });
+  }
+});
+
+// Transaction Velocity Data
+router.get('/transaction-velocity', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.getTransactionVelocityData(req.user.id);
+    res.json(result.success ? result.data : { error: result.error });
+  } catch (error) {
+    console.error('Transaction velocity error:', error);
+    res.status(500).json({ error: 'Failed to fetch transaction velocity' });
+  }
+});
+
+// Digital Vault Data (Balance Aggregations)
+router.get('/digital-vault', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.getDigitalVaultData(req.user.id);
+    res.json(result.success ? result.data : { error: result.error });
+  } catch (error) {
+    console.error('Digital vault error:', error);
+    res.status(500).json({ error: 'Failed to fetch digital vault data' });
+  }
+});
+
+// USDC Flow Data (Inflow/Outflow Analysis)
+router.get('/usdc-flow/:period', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const period = req.params.period || '30D';
+    const result = await HalaxaEngine.fetchUSDCFlowData(req.user.id, period);
+    res.json(result);
+  } catch (error) {
+    console.error('USDC flow error:', error);
+    res.status(500).json({ error: 'Failed to fetch USDC flow data' });
+  }
+});
+
+// User Growth Data (4-month analysis)
+router.get('/user-growth', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.fetchUserGrowthData();
+    res.json(result);
+  } catch (error) {
+    console.error('User growth error:', error);
+    res.status(500).json({ error: 'Failed to fetch user growth data' });
+  }
+});
+
+// Billing History Data
+router.get('/billing-history', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.getBillingHistoryData(req.user.id);
+    res.json(result.success ? result.data : { error: result.error });
+  } catch (error) {
+    console.error('Billing history error:', error);
+    res.status(500).json({ error: 'Failed to fetch billing history' });
+  }
+});
+
+// Order Management Analytics
+router.get('/order-analytics', authenticateToken, async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const result = await HalaxaEngine.populateOrderCards();
+    res.json(result);
+  } catch (error) {
+    console.error('Order analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch order analytics' });
+  }
+});
+
+console.log('✅ ACCOUNT.JS: All Engine.js calculation endpoints loaded successfully');
+
 export default router; 
