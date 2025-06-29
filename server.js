@@ -9,6 +9,7 @@ import { supabase } from './supabase.js';
 import { validateEmail, validatePassword, validateRequest } from './security.js';
 import { DetectionAPI } from './Detection.js';
 import { authenticateToken } from './authMiddleware.js';
+import { geoBlockMiddleware, geoAdminRoutes } from './geoBlock.js';
 
 dotenv.config();
 
@@ -60,6 +61,10 @@ app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// ==================== GEO-BLOCKING MIDDLEWARE ==================== //
+// Apply geo-blocking to all routes (will skip localhost for development)
+app.use(geoBlockMiddleware);
+
 // TEMPORARY CATCH-ALL ROUTE FOR DEBUGGING - MUST BE AT THE TOP
 app.all('*', (req, res, next) => {
     console.log(`Received request: ${req.method} ${req.originalUrl}`);
@@ -102,6 +107,11 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/stripe', stripeRoutes);
+
+// Geo-blocking admin routes
+const geoRouter = express.Router();
+geoAdminRoutes(geoRouter);
+app.use('/api/geo', geoRouter);
 
 // Payment Link Routes (using Engine.js)
 app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
@@ -191,7 +201,44 @@ app.get('/api/payment-links/:linkId', async (req, res) => {
   }
 });
 
+// Payment verification endpoint
 app.post('/api/payment-links/:linkId/verify', async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const { wallet_address, amount_usdc, network } = req.body;
+    const linkId = req.params.linkId;
+    
+    console.log('Verifying payment:', { linkId, wallet_address, amount_usdc, network });
+    
+    const result = await HalaxaEngine.verifyPayment(linkId, wallet_address, amount_usdc, network);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error verifying payment:', error);
+    res.status(500).json({ success: false, error: 'Failed to verify payment' });
+  }
+});
+
+// Buyer details endpoint
+app.post('/api/payment-links/:linkId/buyer', async (req, res) => {
+  try {
+    const { HalaxaEngine } = await import('./Engine.js');
+    const linkId = req.params.linkId;
+    const buyerInfo = req.body;
+    
+    console.log('Saving buyer details for link:', linkId, buyerInfo);
+    
+    const result = await HalaxaEngine.markPaymentPending(linkId, buyerInfo);
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error saving buyer details:', error);
+    res.status(500).json({ success: false, error: 'Failed to save buyer details' });
+  }
+});
+
+// Additional verification endpoint for backward compatibility
+app.post('/api/payment-links/:linkId/process-verification', async (req, res) => {
   try {
     const { HalaxaEngine } = await import('./Engine.js');
     const result = await HalaxaEngine.processPaymentVerification(req.params.linkId, req.body);
