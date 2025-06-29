@@ -303,6 +303,10 @@ export const HalaxaEngine = {
       const { wallet_address, amount_usdc, network, product_title, description } = link_data;
 
       // 🚨 CRITICAL VALIDATION: Ensure user ID is present
+      console.log("🔍 DEBUG - Validating seller_id:", seller_id);
+      console.log("🔍 DEBUG - seller_id type:", typeof seller_id);
+      console.log("🔍 DEBUG - seller_id truthy:", !!seller_id);
+      
       if (!seller_id) {
         console.error('❌ CRITICAL: seller_id is null or undefined!', { seller_data, link_data });
         return { success: false, error: 'User authentication required - seller_id missing' };
@@ -317,6 +321,31 @@ export const HalaxaEngine = {
         product_title, 
         description 
       });
+
+      // 🚨 CRITICAL VALIDATION: Check all required fields
+      console.log("🔍 DEBUG - Validating link_data fields:");
+      console.log("💰 amount_usdc:", amount_usdc, "type:", typeof amount_usdc);
+      console.log("🏦 wallet_address:", wallet_address, "type:", typeof wallet_address);
+      console.log("🌐 network:", network, "type:", typeof network);
+      console.log("📛 product_title:", product_title, "type:", typeof product_title);
+      console.log("📝 description:", description, "type:", typeof description);
+      
+      // Validate required fields
+      if (!amount_usdc || isNaN(amount_usdc) || amount_usdc <= 0) {
+        return { success: false, error: 'Invalid amount: must be a positive number' };
+      }
+      
+      if (!wallet_address || typeof wallet_address !== 'string' || wallet_address.trim().length === 0) {
+        return { success: false, error: 'Invalid wallet address: cannot be empty' };
+      }
+      
+      if (!product_title || typeof product_title !== 'string' || product_title.trim().length === 0) {
+        return { success: false, error: 'Invalid product title: cannot be empty' };
+      }
+      
+      if (!network || typeof network !== 'string') {
+        return { success: false, error: 'Invalid network: must be a string' };
+      }
 
       // Validate network
       if (!['polygon', 'solana'].includes(network.toLowerCase())) {
