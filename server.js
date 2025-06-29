@@ -116,6 +116,29 @@ app.use('/api/geo', geoRouter);
 // Payment Link Routes (using Engine.js)
 app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
   try {
+    // DEVELOPMENT MODE: Mock payment link creation when Supabase is not properly configured
+    if (process.env.NODE_ENV === 'development' && process.env.SUPABASE_URL === 'https://placeholder.supabase.co') {
+      console.log('🔧 DEVELOPMENT MODE: Creating mock payment link');
+      
+      const mockLinkId = 'halaxa_dev_' + Math.random().toString(36).substr(2, 12);
+      const mockResponse = {
+        success: true,
+        payment_link: {
+          link_id: mockLinkId,
+          link_name: req.body.link_name,
+          amount_usdc: req.body.amount_usdc,
+          network: req.body.network,
+          wallet_address: req.body.wallet_address,
+          payment_url: `https://halaxapay.netlify.app/Buyer Form.html?amount=${req.body.amount_usdc}&chain=${req.body.network}&link_id=${mockLinkId}&wallet_address=${req.body.wallet_address}`,
+          created_at: new Date().toISOString(),
+          is_active: true
+        }
+      };
+      
+      console.log('✅ Mock payment link created:', mockLinkId);
+      return res.json(mockResponse);
+    }
+    
     const { HalaxaEngine } = await import('./Engine.js');
     
     // Get user plan

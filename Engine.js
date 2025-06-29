@@ -4432,11 +4432,6 @@ async function updateUSDCTransactionVolumeOverview(userId, days = 7) {
   });
 }
 
-// Helper to capitalize network names
-function capitalize(str) {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
 // ==================== Payment Status Pie Chart Functionality ==================== //
 
 async function fetchPaymentStatusData(userId) {

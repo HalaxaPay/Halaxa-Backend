@@ -5,6 +5,17 @@ dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET;
 
 export function authenticateToken(req, res, next) {
+  // DEVELOPMENT MODE: Bypass authentication when using placeholder credentials
+  if (process.env.NODE_ENV === 'development' && process.env.SUPABASE_URL === 'https://placeholder.supabase.co') {
+    console.log('🔧 DEVELOPMENT MODE: Bypassing authentication');
+    req.user = {
+      id: 'dev-user-123',
+      email: 'dev@test.com',
+      plan: 'basic'
+    };
+    return next();
+  }
+
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer <token>"
 
