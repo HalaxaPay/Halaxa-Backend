@@ -316,6 +316,22 @@ export const HalaxaEngine = {
       const { seller_id, plan } = seller_data;
       const { wallet_address, amount_usdc, network, product_title, description } = link_data;
 
+      // 🚨 CRITICAL VALIDATION: Ensure user ID is present
+      if (!seller_id) {
+        console.error('❌ CRITICAL: seller_id is null or undefined!', { seller_data, link_data });
+        return { success: false, error: 'User authentication required - seller_id missing' };
+      }
+
+      console.log("🔐 Creating payment link for user:", seller_id);
+      console.log("📊 User plan:", plan);
+      console.log("💰 Payment link data:", { 
+        wallet_address, 
+        amount_usdc, 
+        network, 
+        product_title, 
+        description 
+      });
+
       // Validate network
       if (!['polygon', 'solana'].includes(network.toLowerCase())) {
         return { success: false, error: 'Network must be either Polygon or Solana' };
@@ -328,7 +344,12 @@ export const HalaxaEngine = {
         .eq('user_id', seller_id)
         .eq('is_active', true);
 
-      if (countError) throw countError;
+      if (countError) {
+        console.error('❌ Error checking payment link count:', countError);
+        throw countError;
+      }
+
+      console.log(`📈 Current active links for user ${seller_id}: ${linkCount}`);
 
       const planLimits = {
         basic: 1,
@@ -338,30 +359,44 @@ export const HalaxaEngine = {
 
       const maxLinks = planLimits[plan] || 0;
       if (linkCount >= maxLinks) {
+        console.log(`🚫 Plan limit reached: ${linkCount}/${maxLinks} for ${plan} plan`);
         return { success: false, error: `Plan limit reached. ${plan} plan allows ${maxLinks} active links.` };
       }
 
       // Generate unique link ID
       const link_id = 'halaxa_' + generateId(12);
+      console.log("🆔 Generated link ID:", link_id);
+
+      // 🚨 CRITICAL FIX: Include both user_id AND seller_id in the insert
+      const insertData = {
+        link_id,
+        user_id: seller_id,        // ✅ Set user_id
+        seller_id: seller_id,      // ✅ Set seller_id (FIXED)
+        wallet_address: wallet_address.trim(),
+        amount_usdc: parseFloat(amount_usdc),
+        network: network.toLowerCase(),
+        link_name: product_title.trim(),
+        description: description?.trim() || '',
+        is_active: true,
+        created_at: new Date().toISOString()
+      };
+
+      console.log("💾 Inserting payment link data into Supabase:", insertData);
 
       // Create payment link
       const { data: paymentLink, error: linkError } = await supabase
         .from('payment_links')
-        .insert([{
-          link_id,
-          user_id: seller_id,
-          wallet_address: wallet_address.trim(),
-          amount_usdc: parseFloat(amount_usdc),
-          network: network.toLowerCase(),
-          link_name: product_title.trim(),
-          description: description?.trim() || '',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }])
+        .insert([insertData])
         .select()
         .single();
 
-      if (linkError) throw linkError;
+      if (linkError) {
+        console.error('❌ Supabase insert error:', linkError);
+        console.error('❌ Failed insert data:', insertData);
+        throw linkError;
+      }
+
+      console.log("✅ Payment link created successfully:", paymentLink);
 
       return {
         success: true,
@@ -2529,66 +2564,7 @@ window.refreshTransactionInsights = (userId) => {
   return updateTransactionInsightsPanel(userId);
 };
 
-/**
- * Update Total Transactions card using optimized query and robust DOM targeting.
- */
-async function updateTotalTransactionsCard(user_id) {
-  try {
-    // 1. Use .select('id', { count: 'exact' }) for lighter DB queries
-    const { count: totalTransactions, error } = await supabase
-      .from('transactions')
-      .select('id', { count: 'exact' })
-      .eq('user_id', user_id);
 
-    if (error) throw error;
-
-    let found = false;
-
-    // 3. Prioritize direct selection using a new .total-transactions-card class if possible
-    const directCard = document.querySelector('.total-transactions-card');
-    if (directCard) {
-      // Try to find the number element inside the card
-      let numberElem = directCard.querySelector('h2, h3, .stat-value, .summary-value, .metric-value, strong, span');
-      if (numberElem) {
-        numberElem.textContent = totalTransactions.toLocaleString();
-        found = true;
-      }
-    }
-
-    // 2. Use regex check for label-based lookup if direct class not found
-    if (!found) {
-      const cards = document.querySelectorAll('.card, .stat-card, .summary-card, div');
-      cards.forEach(card => {
-        const label = card.textContent?.trim();
-        if (label && /Total Transactions/i.test(label)) {
-          let numberElem = card.querySelector('h2, h3, .stat-value, .summary-value, .metric-value, strong, span');
-          if (numberElem) {
-            numberElem.textContent = totalTransactions.toLocaleString();
-            found = true;
-          }
-        }
-      });
-    }
-
-    // 4. Fallback: try to find by icon and update the next sibling
-    if (!found) {
-      const iconElem = document.querySelector('.fa-chart-line, .fa-chart-area, .fa-chart-bar');
-      if (iconElem && iconElem.parentElement) {
-        const numberElem = iconElem.parentElement.nextElementSibling;
-        if (numberElem) {
-          numberElem.textContent = totalTransactions.toLocaleString();
-        }
-      }
-    }
-
-    console.log('Total Transactions card updated:', totalTransactions);
-    return { success: true, total: totalTransactions };
-
-  } catch (error) {
-    console.error('Error updating Total Transactions card:', error);
-    return { success: false, error: 'Failed to update Total Transactions' };
-  }
-}
 
 /**
  * Update Total Volume card using optimized query and robust DOM targeting.

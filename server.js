@@ -116,16 +116,33 @@ app.use('/api/geo', geoRouter);
 // Payment Link Routes (using Engine.js)
 app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
   try {
+    // 🚨 CRITICAL LOGGING: Verify user authentication from JWT
+    console.log("🔐 Payment link creation request received");
+    console.log("👤 Authenticated user ID:", req.user?.id);
+    console.log("📧 User email:", req.user?.email);
+    console.log("📝 Request body:", req.body);
+    
+    if (!req.user?.id) {
+      console.error("❌ CRITICAL: No user ID found in JWT token!");
+      return res.status(401).json({ error: 'User authentication failed - no user ID' });
+    }
+
     const { HalaxaEngine } = await import('./Engine.js');
     
     // Get user plan
-    const { data: userPlan } = await supabase
+    console.log("📊 Fetching user plan for:", req.user.id);
+    const { data: userPlan, error: planError } = await supabase
       .from('user_plans')
       .select('plan_type')
       .eq('user_id', req.user.id)
       .single();
     
+    if (planError) {
+      console.log("⚠️ No user plan found, defaulting to basic:", planError.message);
+    }
+    
     const plan = userPlan?.plan_type || 'basic';
+    console.log("📈 User plan determined:", plan);
     
     // Format data as expected by Engine.js
     const seller_data = {
@@ -140,6 +157,8 @@ app.post('/api/payment-links/create', authenticateToken, async (req, res) => {
       product_title: req.body.link_name, // Map link_name to product_title
       description: req.body.description || req.body.link_name
     };
+    
+    console.log("🎯 Calling HalaxaEngine.createPaymentLink with:", { seller_data, link_data });
     
     const result = await HalaxaEngine.createPaymentLink(seller_data, link_data);
     
