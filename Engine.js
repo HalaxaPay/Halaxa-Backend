@@ -463,7 +463,6 @@ export const HalaxaEngine = {
         .from('payment_links')
         .select('*')
         .eq('link_id', link_id)
-        .eq('status', 'active')
         .single();
 
       if (error) {
