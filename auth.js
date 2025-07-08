@@ -820,7 +820,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Generate password reset token
     const resetToken = await generatePasswordResetToken(user.id);
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL}/PasswordReset.html?token=${resetToken}`;
 
     // TODO: Send password reset email
     // For now, just log the URL to the console

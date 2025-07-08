@@ -117,7 +117,7 @@ export const sendVerificationEmail = async (email, token) => {
 
 // Send password reset email
 export const sendPasswordResetEmail = async (email, token) => {
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+  const resetUrl = `${process.env.FRONTEND_URL}/PasswordReset.html?token=${token}`;
   
   await transporter.sendMail({
     from: process.env.SMTP_FROM,
