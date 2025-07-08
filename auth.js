@@ -638,31 +638,49 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
       } else {
         console.log('📝 User does not exist in users table - proceeding with insert...');
         
-        // Prepare user data for insert - try minimal required fields first
+        // Prepare user data for insert with ALL expected fields
         const userData = {
           id: newUser.id, // Use same UUID as Supabase Auth
           email: email,
-          created_at: new Date().toISOString()
+          password: '', // Empty password since we're using Supabase Auth
+          first_name: first_name || '',
+          last_name: last_name || '',
+          full_name: fullName || '',
+          plan: 'basic',
+          is_email_verified: true, // Auto-verified since using Supabase Auth admin
+          created_at: new Date().toISOString(),
+          last_login: new Date().toISOString(), // Set initial last login
+          refresh_token: '' // Empty initially, will be set during login
         };
         
-        console.log('📋 Attempting insert with minimal required fields:', {
+        console.log('📋 Attempting insert with complete user data:', {
           id: userData.id.substring(0, 8) + '****',
           email: userData.email,
-          created_at: userData.created_at
+          password: userData.password ? '[HIDDEN]' : '[EMPTY]',
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          full_name: userData.full_name,
+          plan: userData.plan,
+          is_email_verified: userData.is_email_verified,
+          created_at: userData.created_at,
+          last_login: userData.last_login,
+          refresh_token: userData.refresh_token ? '[HIDDEN]' : '[EMPTY]'
         });
         
-        // Try insert with minimal fields first
+        // Try insert with complete fields
         let insertResponse = await supabase
           .from('users')
           .insert([userData])
           .select();
         
-        // If minimal insert fails, try with additional fields
+        // If complete insert fails, try without optional fields
         if (insertResponse.error) {
-          console.log('⚠️ Minimal insert failed, trying with additional fields...');
+          console.log('⚠️ Complete insert failed, trying without optional fields...');
           
-          const extendedUserData = {
-            ...userData,
+          const minimalUserData = {
+            id: newUser.id,
+            email: email,
+            password: '',
             first_name: first_name || '',
             last_name: last_name || '',
             full_name: fullName || '',
@@ -670,49 +688,41 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
             is_email_verified: true
           };
           
-          console.log('📋 Retrying with extended user data:', {
-            id: extendedUserData.id.substring(0, 8) + '****',
-            email: extendedUserData.email,
-            created_at: extendedUserData.created_at,
-            first_name: extendedUserData.first_name,
-            last_name: extendedUserData.last_name,
-            full_name: extendedUserData.full_name,
-            plan: extendedUserData.plan,
-            is_email_verified: extendedUserData.is_email_verified
+          console.log('📋 Retrying with minimal required fields:', {
+            id: minimalUserData.id.substring(0, 8) + '****',
+            email: minimalUserData.email,
+            password: '[EMPTY]',
+            first_name: minimalUserData.first_name,
+            last_name: minimalUserData.last_name,
+            full_name: minimalUserData.full_name,
+            plan: minimalUserData.plan,
+            is_email_verified: minimalUserData.is_email_verified
           });
           
           insertResponse = await supabase
             .from('users')
-            .insert([extendedUserData])
+            .insert([minimalUserData])
             .select();
           
-          // If extended insert also fails, try without created_at (let DB set it)
+          // If minimal insert also fails, try with just the absolute basics
           if (insertResponse.error) {
-            console.log('⚠️ Extended insert also failed, trying without created_at field...');
+            console.log('⚠️ Minimal insert also failed, trying with absolute basics...');
             
-            const { created_at, ...userDataWithoutCreatedAt } = userData;
-            const finalUserData = {
-              ...userDataWithoutCreatedAt,
-              first_name: first_name || '',
-              last_name: last_name || '',
-              full_name: fullName || '',
-              plan: 'basic',
-              is_email_verified: true
+            const basicUserData = {
+              id: newUser.id,
+              email: email,
+              password: ''
             };
             
-            console.log('📋 Final attempt without created_at field:', {
-              id: finalUserData.id.substring(0, 8) + '****',
-              email: finalUserData.email,
-              first_name: finalUserData.first_name,
-              last_name: finalUserData.last_name,
-              full_name: finalUserData.full_name,
-              plan: finalUserData.plan,
-              is_email_verified: finalUserData.is_email_verified
+            console.log('📋 Final attempt with absolute basics:', {
+              id: basicUserData.id.substring(0, 8) + '****',
+              email: basicUserData.email,
+              password: '[EMPTY]'
             });
             
             insertResponse = await supabase
               .from('users')
-              .insert([finalUserData])
+              .insert([basicUserData])
               .select();
           }
         }
