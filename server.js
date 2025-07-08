@@ -108,6 +108,77 @@ app.use('/api/auth', authRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/stripe', stripeRoutes);
 
+// Password Reset Route (secure backend handling)
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, error: 'Valid email is required' });
+    }
+    
+    // Check if user exists in Supabase
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+    
+    if (error || !user) {
+      return res.status(404).json({ success: false, error: 'Email not found' });
+    }
+    
+    // Generate reset token and expiry
+    const reset_token = crypto.randomUUID();
+    const reset_token_expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    
+    // Update user with reset token
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ reset_token, reset_token_expires })
+      .eq('id', user.id);
+    
+    if (updateError) {
+      console.error('Failed to update user with reset token:', updateError);
+      return res.status(500).json({ success: false, error: 'Failed to generate reset token' });
+    }
+    
+    // Send email via SendGrid (API key from environment)
+    const sendgridApiKey = process.env.SENDGRID_API_KEY;
+    if (!sendgridApiKey) {
+      console.error('SENDGRID_API_KEY not found in environment variables');
+      return res.status(500).json({ success: false, error: 'Email service not configured' });
+    }
+    
+    const resetUrl = `${process.env.FRONTEND_URL || 'https://halaxapay.netlify.app'}/reset-password?token=${reset_token}`;
+    const emailHtml = `<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'></head><body style='background:#fff0e3;'><table width='100%' style='background:#fff0e3;'><tr><td align='center'><table width='680' style='background:#fff;border-radius:12px;'><tr><td align='center' style='padding:40px 0 20px;'><img src='https://ad9ae8c18a.imgdist.com/pub/bfra/46888wl5/ha8/dar/44v/Halaxa%20Logo%20New.PNG' width='147' alt='Halaxa Logo'></td></tr><tr><td align='center'><h1 style='font-size:38px;font-family:Arial,sans-serif;'>Forgot Your Password?</h1></td></tr><tr><td align='center'><img src='https://static.vecteezy.com/system/resources/previews/002/697/624/non_2x/password-reset-icon-for-apps-and-web-vector.jpg' width='374' alt='Resetting Password' style='margin:20px 0;'></td></tr><tr><td align='center'><h2 style='font-size:27px;font-family:Arial,sans-serif;'>Let's get you back in</h2></td></tr><tr><td align='center' style='padding:10px 40px;'><p style='font-size:14px;font-family:Arial,sans-serif;'>Hey there, We received a request to reset your Halaxa Pay password. Click the button below to set a new one.</p></td></tr><tr><td align='center' style='padding:20px;'><a href='${resetUrl}' style='background:#2ecc71;color:#fff;padding:12px 32px;border-radius:4px;font-size:16px;text-decoration:none;display:inline-block;'>Reset Password</a></td></tr><tr><td align='center' style='padding:20px 0 0;'><em style='font-size:16px;font-family:Arial,sans-serif;'>© 2025 Halaxa Pay, All rights reserved.</em></td></tr></table></td></tr></table></body></html>`;
+    
+    const sgResponse = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${sendgridApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email }], subject: 'Reset your Halaxa Pay password' }],
+        from: { email: 'no-reply@halaxa.com', name: 'Halaxa Pay' },
+        content: [{ type: 'text/html', value: emailHtml }]
+      })
+    });
+    
+    if (!sgResponse.ok) {
+      console.error('SendGrid API error:', await sgResponse.text());
+      return res.status(500).json({ success: false, error: 'Failed to send reset email' });
+    }
+    
+    res.json({ success: true, message: 'Reset link sent to your email' });
+    
+  } catch (error) {
+    console.error('Password reset error:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 // Geo-blocking admin routes
 const geoRouter = express.Router();
 geoAdminRoutes(geoRouter);
