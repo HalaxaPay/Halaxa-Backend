@@ -588,7 +588,36 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     console.log('📝 Inserting user data into users table...');
     let usersTableInserted = false;
     
+    // First, let's check if the users table exists and get its structure
     try {
+      console.log('🔍 Checking users table structure...');
+      const { data: tableInfo, error: tableError } = await supabase
+        .from('users')
+        .select('*')
+        .limit(1);
+      
+      if (tableError) {
+        console.error('❌ Error accessing users table:', {
+          message: tableError.message,
+          code: tableError.code,
+          details: tableError.details
+        });
+        console.log('⚠️ Users table may not exist or have permission issues');
+      } else {
+        console.log('✅ Users table is accessible');
+        if (tableInfo && tableInfo.length > 0) {
+          console.log('📋 Sample user record structure:', Object.keys(tableInfo[0]));
+        } else {
+          console.log('📋 Users table exists but is empty');
+        }
+      }
+    } catch (tableCheckException) {
+      console.error('❌ Exception checking users table:', tableCheckException.message);
+    }
+    
+    try {
+      console.log('🔍 Checking if user already exists in users table...');
+      
       // Check if user already exists in users table to prevent duplicates
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
@@ -597,46 +626,139 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
         .single();
       
       if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('❌ Error checking existing user in users table:', checkError);
+        console.error('❌ Error checking existing user in users table:', {
+          message: checkError.message,
+          code: checkError.code,
+          details: checkError.details,
+          hint: checkError.hint
+        });
       } else if (existingUser) {
         console.log('✅ User already exists in users table - skipping insert');
         usersTableInserted = true;
       } else {
-        // Insert new user into users table
-        const { data: insertedUser, error: insertError } = await supabase
+        console.log('📝 User does not exist in users table - proceeding with insert...');
+        
+        // Prepare user data for insert - try minimal required fields first
+        const userData = {
+          id: newUser.id, // Use same UUID as Supabase Auth
+          email: email,
+          created_at: new Date().toISOString()
+        };
+        
+        console.log('📋 Attempting insert with minimal required fields:', {
+          id: userData.id.substring(0, 8) + '****',
+          email: userData.email,
+          created_at: userData.created_at
+        });
+        
+        // Try insert with minimal fields first
+        let insertResponse = await supabase
           .from('users')
-          .insert([{
-            id: newUser.id, // Use same UUID as Supabase Auth
-            email: email,
-            created_at: new Date().toISOString(),
+          .insert([userData])
+          .select();
+        
+        // If minimal insert fails, try with additional fields
+        if (insertResponse.error) {
+          console.log('⚠️ Minimal insert failed, trying with additional fields...');
+          
+          const extendedUserData = {
+            ...userData,
             first_name: first_name || '',
             last_name: last_name || '',
             full_name: fullName || '',
             plan: 'basic',
-            is_email_verified: true // Auto-verified since using Supabase Auth admin
-          }])
-          .select()
-          .single();
-
-        if (insertError) {
-          // Log error but don't block signup process
+            is_email_verified: true
+          };
+          
+          console.log('📋 Retrying with extended user data:', {
+            id: extendedUserData.id.substring(0, 8) + '****',
+            email: extendedUserData.email,
+            created_at: extendedUserData.created_at,
+            first_name: extendedUserData.first_name,
+            last_name: extendedUserData.last_name,
+            full_name: extendedUserData.full_name,
+            plan: extendedUserData.plan,
+            is_email_verified: extendedUserData.is_email_verified
+          });
+          
+          insertResponse = await supabase
+            .from('users')
+            .insert([extendedUserData])
+            .select();
+          
+          // If extended insert also fails, try without created_at (let DB set it)
+          if (insertResponse.error) {
+            console.log('⚠️ Extended insert also failed, trying without created_at field...');
+            
+            const { created_at, ...userDataWithoutCreatedAt } = userData;
+            const finalUserData = {
+              ...userDataWithoutCreatedAt,
+              first_name: first_name || '',
+              last_name: last_name || '',
+              full_name: fullName || '',
+              plan: 'basic',
+              is_email_verified: true
+            };
+            
+            console.log('📋 Final attempt without created_at field:', {
+              id: finalUserData.id.substring(0, 8) + '****',
+              email: finalUserData.email,
+              first_name: finalUserData.first_name,
+              last_name: finalUserData.last_name,
+              full_name: finalUserData.full_name,
+              plan: finalUserData.plan,
+              is_email_verified: finalUserData.is_email_verified
+            });
+            
+            insertResponse = await supabase
+              .from('users')
+              .insert([finalUserData])
+              .select();
+          }
+        }
+        
+        console.log('📊 Insert response received:', {
+          hasData: !!insertResponse.data,
+          dataLength: insertResponse.data?.length,
+          hasError: !!insertResponse.error,
+          errorMessage: insertResponse.error?.message,
+          errorCode: insertResponse.error?.code
+        });
+        
+        if (insertResponse.error) {
+          // Log detailed error information
           console.error('❌ Failed to insert user into users table:', {
-            message: insertError.message,
-            code: insertError.code,
-            details: insertError.details
+            message: insertResponse.error.message,
+            code: insertResponse.error.code,
+            details: insertResponse.error.details,
+            hint: insertResponse.error.hint,
+            schema: insertResponse.error.schema,
+            table: insertResponse.error.table,
+            column: insertResponse.error.column,
+            dataType: insertResponse.error.dataType,
+            constraint: insertResponse.error.constraint
           });
           console.log('⚠️ User signup successful but users table insert failed - continuing...');
-        } else {
+        } else if (insertResponse.data && insertResponse.data.length > 0) {
+          const insertedUser = insertResponse.data[0];
           console.log('✅ User successfully inserted into users table:', {
-            id: insertedUser.id.substring(0, 8) + '****',
-            email: insertedUser.email
+            id: insertedUser.id?.substring(0, 8) + '****',
+            email: insertedUser.email,
+            created_at: insertedUser.created_at
           });
           usersTableInserted = true;
+        } else {
+          console.warn('⚠️ Insert response has no data but no error - checking what happened...');
         }
       }
     } catch (insertException) {
-      // Log exception but don't block signup process
-      console.error('❌ Exception during users table insert:', insertException.message);
+      // Log detailed exception information
+      console.error('❌ Exception during users table insert:', {
+        message: insertException.message,
+        stack: insertException.stack,
+        name: insertException.name,
+        code: insertException.code
+      });
       console.log('⚠️ User signup successful but users table insert failed - continuing...');
     }
     
