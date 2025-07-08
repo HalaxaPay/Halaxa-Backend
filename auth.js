@@ -4,6 +4,9 @@ import jwt from 'jsonwebtoken';
 import { supabase } from './supabase.js';
 import { validateEmail, validatePassword, validateRequest, generatePasswordResetToken } from './security.js';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const router = express.Router();
 
@@ -802,12 +805,15 @@ router.get('/verify-email/:token', async (req, res) => {
   }
 });
 
-// Request password reset
+// POST /forgot-password
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Valid email is required.' });
+    }
 
-    // Find user
+    // Look up user by email
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('*')
@@ -815,21 +821,84 @@ router.post('/forgot-password', async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'No user found with that email.' });
     }
 
-    // Generate password reset token
-    const resetToken = await generatePasswordResetToken(user.id);
-    const resetUrl = `${process.env.FRONTEND_URL}/PasswordReset.html?token=${resetToken}`;
+    // Generate secure token and expiry
+    const reset_token = crypto.randomUUID();
+    const reset_token_expires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-    // TODO: Send password reset email
-    // For now, just log the URL to the console
-    console.log('Password Reset URL:', resetUrl);
+    // Update user with reset token and expiry
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ reset_token, reset_token_expires })
+      .eq('id', user.id);
 
-    res.json({ message: 'Password reset email sent (check console for URL)' });
+    if (updateError) {
+      console.error('Failed to update user with reset token:', updateError);
+      return res.status(500).json({ error: 'Failed to set reset token.' });
+    }
+
+    // Set up nodemailer with SendGrid
+    const transporter = nodemailer.createTransport({
+      service: 'SendGrid',
+      auth: {
+        type: 'login',
+        user: 'apikey',
+        pass: process.env.SENDGRID_API_KEY
+      }
+    });
+
+    // Build reset link
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${reset_token}`;
+
+    // Full HTML email template (replace with your actual template if needed)
+    const emailHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your Password</title>
+  <style>
+    body { background: #fff0e3; font-family: Arial, sans-serif; }
+    .container { background: #fff; border-radius: 12px; max-width: 480px; margin: 40px auto; padding: 32px; box-shadow: 0 8px 32px rgba(46,204,113,0.10), 0 1.5px 8px rgba(52,152,219,0.08); }
+    .logo { text-align: center; margin-bottom: 24px; }
+    .btn { display: inline-block; background: linear-gradient(90deg, #2ECC71 0%, #3498DB 100%); color: #fff; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 1.1rem; font-weight: bold; margin: 24px 0; }
+    .footer { color: #888; font-size: 0.95rem; text-align: center; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <img src="https://ad9ae8c18a.imgdist.com/pub/bfra/46888wl5/ha8/dar/44v/Halaxa%20Logo%20New.PNG" alt="Halaxa Logo" width="120" />
+    </div>
+    <h1 style="text-align:center; color:#2ECC71;">Reset Your Password</h1>
+    <p style="text-align:center; color:#333;">We received a request to reset your Halaxa Pay password. Click the button below to set a new one. If you did not request this, you can safely ignore this email.</p>
+    <div style="text-align:center;">
+      <a href="${resetUrl}" class="btn">Reset Password</a>
+    </div>
+    <div class="footer">&copy; 2025 Halaxa Pay, All rights reserved.</div>
+  </div>
+</body>
+</html>`;
+
+    // Send the email
+    try {
+      await transporter.sendMail({
+        from: 'no-reply@halaxa.com',
+        to: email,
+        subject: 'Reset your Halaxa Pay password',
+        html: emailHtml
+      });
+    } catch (mailError) {
+      console.error('Failed to send reset email:', mailError);
+      return res.status(500).json({ error: 'Failed to send reset email.' });
+    }
+
+    res.json({ message: 'Reset link sent to your email.' });
   } catch (error) {
     console.error('Forgot password error:', error);
-    res.status(500).json({ error: 'Forgot password failed' });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -1147,5 +1216,8 @@ router.delete('/admin/users/:userId', async (req, res) => {
 
 // DEBUG: Test route to confirm router is loaded
 router.get('/test', (req, res) => res.json({ ok: true, message: 'Auth router is active!' }));
+
+// DEBUG: Route existence check
+router.get('/route-exists-check', (req, res) => res.json({ ok: true, message: 'Router is loaded and up to date.' }));
 
 export default router;
