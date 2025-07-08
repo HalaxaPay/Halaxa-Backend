@@ -584,14 +584,12 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     const newUser = authData.user;
     console.log(`🔐 Created Supabase Auth user: ${newUser.id.substring(0, 8)}****`);
 
-    // 🗃️ ALSO INSERT INTO CUSTOM USERS TABLE (for compatibility with existing queries)
-    console.log('📝 Creating custom users table entry...');
-    let customUserCreated = false;
+    // ✅ AUTOMATIC INSERT INTO USERS TABLE AFTER SUCCESSFUL SIGNUP
+    console.log('📝 Inserting user data into users table...');
+    let usersTableInserted = false;
     
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
-      // First check if user already exists in custom table
+      // Check if user already exists in users table to prevent duplicates
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('id, email')
@@ -599,57 +597,54 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
         .single();
       
       if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('❌ Error checking existing user in custom table:', checkError);
+        console.error('❌ Error checking existing user in users table:', checkError);
       } else if (existingUser) {
-        console.log('✅ User already exists in custom users table');
-        customUserCreated = true;
+        console.log('✅ User already exists in users table - skipping insert');
+        usersTableInserted = true;
       } else {
-        // Insert new user into custom table
-        const { data: customUser, error: customUserError } = await supabase
+        // Insert new user into users table
+        const { data: insertedUser, error: insertError } = await supabase
           .from('users')
           .insert([{
             id: newUser.id, // Use same UUID as Supabase Auth
             email: email,
-            password: hashedPassword,
-            first_name: first_name,
-            last_name: last_name,
-            full_name: fullName,
+            created_at: new Date().toISOString(),
+            first_name: first_name || '',
+            last_name: last_name || '',
+            full_name: fullName || '',
             plan: 'basic',
-            is_email_verified: true // Auto-verified since using Supabase Auth
+            is_email_verified: true // Auto-verified since using Supabase Auth admin
           }])
           .select()
           .single();
 
-        if (customUserError) {
-          console.error('❌ CRITICAL: Could not create custom users table entry:', {
-            message: customUserError.message,
-            code: customUserError.code,
-            details: customUserError.details,
-            hint: customUserError.hint
+        if (insertError) {
+          // Log error but don't block signup process
+          console.error('❌ Failed to insert user into users table:', {
+            message: insertError.message,
+            code: insertError.code,
+            details: insertError.details
           });
-          
-          // This is important - if custom users table fails, many dashboard queries will break
-          console.error('🚨 This will cause issues with dashboard queries that depend on the custom users table');
+          console.log('⚠️ User signup successful but users table insert failed - continuing...');
         } else {
-          console.log('✅ Custom users table entry created successfully:', {
-            id: customUser.id.substring(0, 8) + '****',
-            email: customUser.email
+          console.log('✅ User successfully inserted into users table:', {
+            id: insertedUser.id.substring(0, 8) + '****',
+            email: insertedUser.email
           });
-          customUserCreated = true;
+          usersTableInserted = true;
         }
       }
-    } catch (customUserErr) {
-      console.error('❌ CRITICAL: Custom users table creation failed with exception:', {
-        message: customUserErr.message,
-        stack: customUserErr.stack
-      });
+    } catch (insertException) {
+      // Log exception but don't block signup process
+      console.error('❌ Exception during users table insert:', insertException.message);
+      console.log('⚠️ User signup successful but users table insert failed - continuing...');
     }
     
     // Log the final status
-    if (customUserCreated) {
-      console.log('✅ User successfully created in both Supabase Auth AND custom users table');
+    if (usersTableInserted) {
+      console.log('✅ User successfully created in both Supabase Auth AND users table');
     } else {
-      console.warn('⚠️ User created in Supabase Auth but NOT in custom users table - some features may not work');
+      console.warn('⚠️ User created in Supabase Auth but NOT in users table - some features may not work');
     }
 
     // 🚀 INITIALIZE USER DASHBOARD TABLES
