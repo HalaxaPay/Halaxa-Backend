@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { supabase } from './supabase.js';
-import { validateEmail, validatePassword, validateRequest } from './security.js';
+import { validateEmail, validatePassword, validateRequest, generatePasswordResetToken } from './security.js';
 import crypto from 'crypto';
 
 const router = express.Router();
@@ -1144,5 +1144,8 @@ router.delete('/admin/users/:userId', async (req, res) => {
     });
   }
 });
+
+// DEBUG: Test route to confirm router is loaded
+router.get('/test', (req, res) => res.json({ ok: true, message: 'Auth router is active!' }));
 
 export default router;
