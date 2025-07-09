@@ -6,7 +6,7 @@ import { validateEmail, validatePassword, validateRequest, generatePasswordReset
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
-import { sgMail } from '@sendgrid/mail';
+import sgMail from '@sendgrid/mail';
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 dotenv.config();
 
