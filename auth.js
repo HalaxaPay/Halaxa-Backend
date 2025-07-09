@@ -1112,6 +1112,93 @@ router.get('/session', async (req, res) => {
   }
 });
 
+// Google OAuth sync endpoint
+router.post('/oauth-sync', async (req, res) => {
+  try {
+    const { supabaseToken } = req.body;
+    if (!supabaseToken) {
+      return res.status(400).json({ error: 'Missing Supabase Auth token' });
+    }
+
+    // Get user info from Supabase Auth using the token
+    const { data: { user }, error: userError } = await supabase.auth.getUser(supabaseToken);
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Invalid Supabase Auth token', details: userError?.message });
+    }
+
+    // Extract user info
+    const userId = user.id;
+    const email = user.email;
+    const first_name = user.user_metadata?.first_name || '';
+    const last_name = user.user_metadata?.last_name || '';
+    const fullName = user.user_metadata?.full_name || [first_name, last_name].filter(Boolean).join(' ');
+
+    // Check if user exists in custom users table
+    let { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('id', userId)
+      .single();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      return res.status(500).json({ error: 'Error checking user in users table', details: checkError.message });
+    }
+
+    if (!existingUser) {
+      // Insert user into custom users table
+      const userData = {
+        id: userId,
+        email: email,
+        password: '',
+        first_name: first_name,
+        last_name: last_name,
+        full_name: fullName,
+        plan: 'basic',
+        is_email_verified: true, // Google users are always verified
+        created_at: new Date().toISOString(),
+        last_login: new Date().toISOString(),
+        refresh_token: ''
+      };
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert([userData]);
+      if (insertError) {
+        return res.status(500).json({ error: 'Failed to insert Google user', details: insertError.message });
+      }
+    }
+
+    // Initialize dashboard tables (idempotent)
+    await initializeUserDashboardTables(userId, email, first_name, last_name);
+
+    // Generate backend JWT tokens
+    const accessToken = jwt.sign(
+      { id: userId, email: email },
+      process.env.JWT_SECRET || 'your-temporary-secret-key',
+      { expiresIn: '1h' }
+    );
+    const refreshToken = jwt.sign(
+      { id: userId },
+      process.env.JWT_REFRESH_SECRET || 'your-temporary-refresh-key',
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: userId,
+        email: email,
+        first_name,
+        last_name,
+        plan: 'basic'
+      }
+    });
+  } catch (error) {
+    console.error('OAuth sync error:', error);
+    res.status(500).json({ error: 'OAuth sync failed', details: error.message });
+  }
+});
+
 // ==================== DEBUG/ADMIN UTILITIES ==================== //
 
 // Get all users from custom users table
