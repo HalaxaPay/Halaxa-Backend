@@ -970,21 +970,21 @@ router.post('/forgot-password', async (req, res) => {
 
     // Set up nodemailer with SendGrid
     // Build reset link
-    const resetUrl = `https://halaxapay.com/reset-password.html?token=${reset_token}`;
+    const resetUrl = `https://halaxapay.com/Changepassword.html?token=${reset_token}`;
 
-    try {
-      await sgMail.send({
-        to: email,
-        from: 'Support@halaxapay.com',
-        template_id: 'd-730aba5502074796ba366fa966eccc43',
-        dynamic_template_data: {
-          reset_link: resetUrl
-        }
-      });
-    } catch (mailError) {
-      console.error('Failed to send reset email:', mailError);
-      return res.status(500).json({ error: 'Failed to send reset email.' });
-    }
+    await sgMail.send({
+      to: email,
+      from: {
+        email: 'Help@halaxapay.com',
+        name: 'HalaxaPay'
+      },
+      templateId: 'd-730aba5502074796ba366fa966eccc43',
+      dynamic_template_data: {
+        reset_link: resetUrl,
+        subject: 'Reset your Halaxa Pay password'
+      }
+    });  
+
 
     res.json({ message: 'Reset link sent to your email.' });
   } catch (error) {
