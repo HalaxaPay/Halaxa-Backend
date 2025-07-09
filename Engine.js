@@ -428,7 +428,7 @@ export const HalaxaEngine = {
         data: {
           link_id,
           payment_link: paymentLink,
-          share_url: `https://halaxapay.netlify.app/Payment%20Page.html?link=${link_id}`
+          share_url: `https://halaxapay.com/Payment%20Page.html?link=${link_id}`
         }
       };
 

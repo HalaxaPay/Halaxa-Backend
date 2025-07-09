@@ -23,7 +23,7 @@ const corsOptions = {
         if (!origin) return callback(null, true);
         
         const allowedOrigins = [
-            'https://halaxapay.netlify.app',
+            'https://halaxapay.com',
             'http://localhost:3000',
             'http://localhost:5173',
             'http://127.0.0.1:5173',
@@ -76,7 +76,7 @@ app.get('/test', (req, res) => {
   console.log('🧪 Test route accessed from origin:', req.headers.origin);
   
   // Manually set CORS headers as backup
-  res.header('Access-Control-Allow-Origin', 'https://halaxapay.netlify.app');
+      res.header('Access-Control-Allow-Origin', 'https://halaxapay.com');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin');
   res.header('Access-Control-Allow-Credentials', 'true');

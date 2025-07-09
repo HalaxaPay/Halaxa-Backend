@@ -63,7 +63,7 @@ router.post('/create-checkout-session', async (req, res) => {
       
       return res.json({
         sessionId: 'dev_session_' + Date.now(),
-        url: `${process.env.FRONTEND_URL || 'https://halaxapay.netlify.app'}?upgrade=success&plan=${plan}&dev=true`,
+        url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=success&plan=${plan}&dev=true`,
         devMode: true,
         message: 'Development mode: Plan upgraded automatically'
       });
@@ -92,8 +92,8 @@ router.post('/create-checkout-session', async (req, res) => {
         userId: userId || '',
         email: email
       },
-      success_url: `${process.env.FRONTEND_URL || 'https://halaxapay.netlify.app'}?upgrade=success&plan=${plan}`,
-      cancel_url: `${process.env.FRONTEND_URL || 'https://halaxapay.netlify.app'}?upgrade=cancelled`,
+              success_url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=success&plan=${plan}`,
+        cancel_url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=cancelled`,
     });
 
     res.json({ 

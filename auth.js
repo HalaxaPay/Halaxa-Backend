@@ -977,7 +977,7 @@ router.post('/forgot-password', async (req, res) => {
     });
 
     // Build reset link
-    const resetUrl = `https://halaxapay.netlify.app/ChangePassword.html?token=${reset_token}`;
+    const resetUrl = `https://halaxapay.com/ChangePassword.html?token=${reset_token}`;
 
     // Full HTML email template (replace with your actual template if needed)
     const emailHtml = `<!DOCTYPE html>
