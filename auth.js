@@ -6,6 +6,8 @@ import { validateEmail, validatePassword, validateRequest, generatePasswordReset
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { sgMail } from '@sendgrid/mail';
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 dotenv.config();
 
 const router = express.Router();
@@ -967,55 +969,17 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     // Set up nodemailer with SendGrid
-    const transporter = nodemailer.createTransport({
-      service: 'SendGrid',
-      auth: {
-        type: 'login',
-        user: 'apikey',
-        pass: process.env.SENDGRID_API_KEY
-      }
-    });
-
     // Build reset link
-    const resetUrl = `https://halaxapay.com/ChangePassword.html?token=${reset_token}`;
+    const resetUrl = `https://halaxapay.com/reset-password.html?token=${reset_token}`;
 
-    // Full HTML email template (replace with your actual template if needed)
-    const emailHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Your Password</title>
-  <style>
-    body { background: #fff0e3; font-family: Arial, sans-serif; }
-    .container { background: #fff; border-radius: 12px; max-width: 480px; margin: 40px auto; padding: 32px; box-shadow: 0 8px 32px rgba(46,204,113,0.10), 0 1.5px 8px rgba(52,152,219,0.08); }
-    .logo { text-align: center; margin-bottom: 24px; }
-    .btn { display: inline-block; background: linear-gradient(90deg, #2ECC71 0%, #3498DB 100%); color: #fff; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 1.1rem; font-weight: bold; margin: 24px 0; }
-    .footer { color: #888; font-size: 0.95rem; text-align: center; margin-top: 32px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="logo">
-      <img src="https://ad9ae8c18a.imgdist.com/pub/bfra/46888wl5/ha8/dar/44v/Halaxa%20Logo%20New.PNG" alt="Halaxa Logo" width="120" />
-    </div>
-    <h1 style="text-align:center; color:#2ECC71;">Reset Your Password</h1>
-    <p style="text-align:center; color:#333;">We received a request to reset your Halaxa Pay password. Click the button below to set a new one. If you did not request this, you can safely ignore this email.</p>
-    <div style="text-align:center;">
-      <a href="${resetUrl}" class="btn">Reset Password</a>
-    </div>
-    <div class="footer">&copy; 2025 Halaxa Pay, All rights reserved.</div>
-  </div>
-</body>
-</html>`;
-
-    // Send the email
     try {
-      await transporter.sendMail({
-        from: 'HalaxaPay@gmail.com',
+      await sgMail.send({
         to: email,
-        subject: 'Reset your Halaxa Pay password',
-        html: emailHtml
+        from: 'Support@halaxapay.com',
+        template_id: 'd-730aba5502074796ba366fa966eccc43',
+        dynamic_template_data: {
+          reset_link: resetUrl
+        }
       });
     } catch (mailError) {
       console.error('Failed to send reset email:', mailError);
