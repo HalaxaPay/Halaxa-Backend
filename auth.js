@@ -977,7 +977,7 @@ router.post('/forgot-password', async (req, res) => {
     });
 
     // Build reset link
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${reset_token}`;
+    const resetUrl = `https://halaxapay.netlify.app/ChangePassword.html?token=${reset_token}`;
 
     // Full HTML email template (replace with your actual template if needed)
     const emailHtml = `<!DOCTYPE html>
@@ -1012,7 +1012,7 @@ router.post('/forgot-password', async (req, res) => {
     // Send the email
     try {
       await transporter.sendMail({
-        from: 'no-reply@halaxa.com',
+        from: 'HalaxaPay@gmail.com',
         to: email,
         subject: 'Reset your Halaxa Pay password',
         html: emailHtml
