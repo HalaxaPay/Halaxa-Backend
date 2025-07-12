@@ -1115,16 +1115,26 @@ router.get('/session', async (req, res) => {
 // Google OAuth sync endpoint
 router.post('/oauth-sync', async (req, res) => {
   try {
+    console.log('🔄 OAuth sync request received');
+    
     const { supabaseToken } = req.body;
     if (!supabaseToken) {
+      console.error('❌ Missing Supabase Auth token');
       return res.status(400).json({ error: 'Missing Supabase Auth token' });
     }
 
+    console.log('🔐 Validating Supabase Auth token...');
+    
     // Get user info from Supabase Auth using the token
     const { data: { user }, error: userError } = await supabase.auth.getUser(supabaseToken);
     if (userError || !user) {
+      console.error('❌ Invalid Supabase Auth token:', userError?.message);
       return res.status(401).json({ error: 'Invalid Supabase Auth token', details: userError?.message });
     }
+
+    console.log('✅ Supabase Auth token validated');
+    console.log('👤 User ID:', user.id.substring(0, 8) + '****');
+    console.log('📧 User email:', user.email);
 
     // Extract user info
     const userId = user.id;
@@ -1133,7 +1143,10 @@ router.post('/oauth-sync', async (req, res) => {
     const last_name = user.user_metadata?.last_name || '';
     const fullName = user.user_metadata?.full_name || [first_name, last_name].filter(Boolean).join(' ');
 
+    console.log('📝 Extracted user info:', { first_name, last_name, fullName });
+
     // Check if user exists in custom users table
+    console.log('🔍 Checking if user exists in custom users table...');
     let { data: existingUser, error: checkError } = await supabase
       .from('users')
       .select('id, email')
@@ -1141,10 +1154,12 @@ router.post('/oauth-sync', async (req, res) => {
       .single();
 
     if (checkError && checkError.code !== 'PGRST116') {
+      console.error('❌ Error checking user in users table:', checkError.message);
       return res.status(500).json({ error: 'Error checking user in users table', details: checkError.message });
     }
 
     if (!existingUser) {
+      console.log('🆕 User not found in custom table, creating new user...');
       // Insert user into custom users table
       const userData = {
         id: userId,
@@ -1163,14 +1178,21 @@ router.post('/oauth-sync', async (req, res) => {
         .from('users')
         .insert([userData]);
       if (insertError) {
+        console.error('❌ Failed to insert Google user:', insertError.message);
         return res.status(500).json({ error: 'Failed to insert Google user', details: insertError.message });
       }
+      console.log('✅ New user created in custom table');
+    } else {
+      console.log('✅ User already exists in custom table');
     }
 
     // Initialize dashboard tables (idempotent)
+    console.log('🚀 Initializing user dashboard tables...');
     await initializeUserDashboardTables(userId, email, first_name, last_name);
+    console.log('✅ Dashboard tables initialized');
 
     // Generate backend JWT tokens
+    console.log('🎫 Generating JWT tokens...');
     const accessToken = jwt.sign(
       { id: userId, email: email },
       process.env.JWT_SECRET || 'your-temporary-secret-key',
@@ -1181,6 +1203,9 @@ router.post('/oauth-sync', async (req, res) => {
       process.env.JWT_REFRESH_SECRET || 'your-temporary-refresh-key',
       { expiresIn: '7d' }
     );
+
+    console.log('✅ JWT tokens generated successfully');
+    console.log('📤 Sending response to frontend...');
 
     res.json({
       accessToken,
@@ -1193,6 +1218,8 @@ router.post('/oauth-sync', async (req, res) => {
         plan: 'basic'
       }
     });
+    
+    console.log('✅ OAuth sync completed successfully');
   } catch (error) {
     console.error('OAuth sync error:', error);
     res.status(500).json({ error: 'OAuth sync failed', details: error.message });
