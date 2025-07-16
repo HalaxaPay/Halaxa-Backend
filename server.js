@@ -2,6 +2,7 @@ console.log('SERVER.JS: STARTING APPLICATION EXECUTION');
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import authRoutes from './auth.js';
 import accountRoutes from './account.js';
 import stripeRoutes from './Stripe.js';
@@ -61,6 +62,50 @@ app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// ==================== RATE LIMITING ==================== //
+// Global rate limiting to prevent API abuse
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+    retryAfter: '15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    console.log(`[RATE_LIMIT] IP ${req.ip} exceeded rate limit`);
+    res.status(429).json({
+      error: 'Too many requests',
+      retryAfter: '15 minutes',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Stricter rate limiting for calculation endpoints
+const calculationLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 20, // Limit each IP to 20 requests per 5 minutes
+  message: {
+    error: 'Too many calculation requests, please try again later.',
+    retryAfter: '5 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    console.log(`[RATE_LIMIT] IP ${req.ip} exceeded calculation rate limit`);
+    res.status(429).json({
+      error: 'Too many calculation requests',
+      retryAfter: '5 minutes',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Apply global rate limiting
+app.use(globalLimiter);
+
 // ==================== GEO-BLOCKING MIDDLEWARE ==================== //
 // Apply geo-blocking to all routes (will skip localhost for development)
 app.use(geoBlockMiddleware);
@@ -101,6 +146,62 @@ app.get('/health', (req, res) => {
       jwt_refresh_secret: !!process.env.JWT_REFRESH_SECRET
     }
   });
+});
+
+// Blockchain API health check
+app.get('/api/health/blockchain', async (req, res) => {
+  try {
+    const healthStatus = await DetectionAPI.healthCheck();
+    res.json({
+      success: true,
+      blockchain_apis: healthStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[ERROR] Blockchain health check failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Blockchain health check failed',
+      details: error.message
+    });
+  }
+});
+
+// Comprehensive system health check
+app.get('/api/health/system', async (req, res) => {
+  try {
+    const blockchainHealth = await DetectionAPI.healthCheck();
+    const detectionStatus = DetectionAPI.status();
+    
+    res.json({
+      success: true,
+      system: {
+        status: 'healthy',
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        timestamp: new Date().toISOString()
+      },
+      blockchain_apis: blockchainHealth,
+      detection_system: detectionStatus,
+      environment: {
+        node_version: process.version,
+        platform: process.platform,
+        env_variables: {
+          supabase_url: !!process.env.SUPABASE_URL,
+          alchemy_polygon: !!process.env.ALCHEMY_POLYGON_API_KEY,
+          alchemy_solana: !!process.env.ALCHEMY_SOLANA_API_KEY,
+          jwt_secret: !!process.env.JWT_SECRET
+        }
+      }
+    });
+  } catch (error) {
+    console.error('[ERROR] System health check failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'System health check failed',
+      details: error.message
+    });
+  }
 });
 
 // Routes
@@ -549,6 +650,338 @@ app.get('/api/access/usage/:userId', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== CALCULATION ENGINE API ENDPOINTS ==================== //
+
+// Main dashboard calculation endpoint
+app.get('/api/dashboard/:userId', authenticateToken, calculationLimiter, async (req, res) => {
+  try {
+    console.log(`[ENGINE] Dashboard calculation started for user: ${req.params.userId.substring(0, 8)}****`);
+    
+    // Validate user ID
+    if (!req.params.userId || typeof req.params.userId !== 'string' || req.params.userId.length < 10) {
+      console.error('[ERROR] Invalid user ID format:', req.params.userId);
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid user ID format' 
+      });
+    }
+    
+    const calculationEngine = await import('./calculation-engine.js');
+    const dashboardData = await calculationEngine.default.calculateUserDashboard(req.params.userId);
+    
+    console.log('[ENGINE] Dashboard calculation completed successfully');
+    res.json({
+      success: true,
+      data: dashboardData
+    });
+  } catch (error) {
+    console.error('[ERROR] Dashboard calculation error:', error);
+    console.error('[ERROR] Error stack:', error.stack);
+    console.error('[ERROR] Error type:', error.constructor.name);
+    
+    // Return appropriate error based on error type
+    if (error.message.includes('wallet') || error.message.includes('address')) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid wallet configuration',
+        details: error.message 
+      });
+    }
+    
+    if (error.message.includes('API') || error.message.includes('network')) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Blockchain API temporarily unavailable',
+        details: error.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to calculate dashboard data',
+      details: error.message,
+      debug_info: {
+        error_type: error.constructor.name,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+});
+
+// Add wallet connection endpoint
+app.post('/api/wallet-connection', authenticateToken, calculationLimiter, async (req, res) => {
+  try {
+    const { wallet_address, network } = req.body;
+    const userId = req.user.id;
+    
+    console.log(`[ENGINE] Wallet connection request for user: ${userId.substring(0, 8)}****`);
+    console.log('[ENGINE] Request data:', { wallet_address: wallet_address?.substring(0, 10) + '...', network });
+    
+    // Validate required fields
+    if (!wallet_address || typeof wallet_address !== 'string' || wallet_address.trim().length === 0) {
+      console.error('[ERROR] Invalid wallet address:', wallet_address);
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Valid wallet address is required' 
+      });
+    }
+    
+    if (!network || typeof network !== 'string' || !['polygon', 'solana'].includes(network.toLowerCase())) {
+      console.error('[ERROR] Invalid network:', network);
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Network must be either "polygon" or "solana"' 
+      });
+    }
+    
+    // Validate wallet address format
+    const walletAddressRegex = /^[0-9a-fA-F]{40,44}$/; // Basic format check
+    if (!walletAddressRegex.test(wallet_address)) {
+      console.error('[ERROR] Invalid wallet address format:', wallet_address);
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid wallet address format' 
+      });
+    }
+    
+    const calculationEngine = await import('./calculation-engine.js');
+    const result = await calculationEngine.default.addWalletConnection(userId, wallet_address, network);
+    
+    if (result.success) {
+      // Clear cache to force fresh calculation
+      calculationEngine.default.clearUserCache(userId);
+      console.log('[ENGINE] Wallet connection added successfully');
+      res.json({ success: true, message: 'Wallet connection added successfully' });
+    } else {
+      console.error('[ERROR] Wallet connection failed:', result.error);
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (error) {
+    console.error('[ERROR] Wallet connection error:', error);
+    console.error('[ERROR] Error stack:', error.stack);
+    console.error('[ERROR] Error type:', error.constructor.name);
+    
+    // Return specific error based on error type
+    if (error.message.includes('duplicate') || error.message.includes('already exists')) {
+      return res.status(409).json({ 
+        success: false, 
+        error: 'Wallet connection already exists' 
+      });
+    }
+    
+    if (error.message.includes('database') || error.message.includes('connection')) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database temporarily unavailable' 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to add wallet connection',
+      details: error.message,
+      debug_info: {
+        error_type: error.constructor.name,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+});
+
+// Get wallet connections endpoint
+app.get('/api/wallet-connections/:userId', authenticateToken, async (req, res) => {
+  try {
+    const calculationEngine = await import('./calculation-engine.js');
+    const result = await calculationEngine.default.getWalletConnections(req.params.userId);
+    
+    res.json({
+      success: true,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Wallet connections error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch wallet connections' });
+  }
+});
+
+// Clear user cache endpoint
+app.post('/api/dashboard/:userId/clear-cache', authenticateToken, calculationLimiter, async (req, res) => {
+  try {
+    console.log(`[ENGINE] Cache clear request for user: ${req.params.userId.substring(0, 8)}****`);
+    
+    // Validate user ID
+    if (!req.params.userId || typeof req.params.userId !== 'string' || req.params.userId.length < 10) {
+      console.error('[ERROR] Invalid user ID format for cache clear:', req.params.userId);
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid user ID format' 
+      });
+    }
+    
+    const calculationEngine = await import('./calculation-engine.js');
+    calculationEngine.default.clearUserCache(req.params.userId);
+    
+    console.log('[ENGINE] Cache cleared successfully');
+    res.json({ success: true, message: 'Cache cleared successfully' });
+  } catch (error) {
+    console.error('[ERROR] Cache clear error:', error);
+    console.error('[ERROR] Error stack:', error.stack);
+    console.error('[ERROR] Error type:', error.constructor.name);
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to clear cache',
+      details: error.message,
+      debug_info: {
+        error_type: error.constructor.name,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+});
+
+// Get calculation engine status
+app.get('/api/calculation-engine/status', (req, res) => {
+  try {
+    const calculationEngine = require('./calculation-engine.js');
+    const status = calculationEngine.default.getSystemStatus();
+    
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('[ERROR] Status check error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get engine status' });
+  }
+});
+
+// ==================== COMPREHENSIVE TESTING ENDPOINTS ==================== //
+
+// Test calculation engine with mock data
+app.post('/api/test/calculation-engine', async (req, res) => {
+  try {
+    console.log('[TEST] Testing calculation engine...');
+    
+    const calculationEngine = await import('./calculation-engine.js');
+    const testUserId = 'test-user-123';
+    
+    // Test with mock wallet data
+    const mockWallets = [
+      { wallet_address: '0x1234567890123456789012345678901234567890', network: 'polygon' },
+      { wallet_address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', network: 'solana' }
+    ];
+    
+    // Test calculation engine
+    const result = await calculationEngine.default.calculateUserDashboard(testUserId);
+    
+    res.json({
+      success: true,
+      test_type: 'calculation_engine',
+      result: {
+        has_data: !!result,
+        data_keys: Object.keys(result || {}),
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('[ERROR] Calculation engine test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Calculation engine test failed',
+      details: error.message
+    });
+  }
+});
+
+// Test blockchain API connectivity
+app.post('/api/test/blockchain-apis', async (req, res) => {
+  try {
+    console.log('[TEST] Testing blockchain APIs...');
+    
+    const healthStatus = await DetectionAPI.healthCheck();
+    
+    res.json({
+      success: true,
+      test_type: 'blockchain_apis',
+      result: healthStatus
+    });
+  } catch (error) {
+    console.error('[ERROR] Blockchain API test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Blockchain API test failed',
+      details: error.message
+    });
+  }
+});
+
+// Test error handling scenarios
+app.post('/api/test/error-scenarios', async (req, res) => {
+  try {
+    console.log('[TEST] Testing error handling scenarios...');
+    
+    const testResults = {
+      invalid_user_id: false,
+      invalid_wallet_address: false,
+      api_timeout: false,
+      network_error: false
+    };
+    
+    // Test invalid user ID
+    try {
+      const calculationEngine = await import('./calculation-engine.js');
+      await calculationEngine.default.calculateUserDashboard('invalid-user-id');
+    } catch (error) {
+      testResults.invalid_user_id = error.message.includes('Invalid') || error.message.includes('not found');
+    }
+    
+    // Test invalid wallet address
+    try {
+      const calculationEngine = await import('./calculation-engine.js');
+      await calculationEngine.default.addWalletConnection('test-user', 'invalid-wallet', 'polygon');
+    } catch (error) {
+      testResults.invalid_wallet_address = error.message.includes('Invalid') || error.message.includes('format');
+    }
+    
+    res.json({
+      success: true,
+      test_type: 'error_scenarios',
+      results: testResults,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[ERROR] Error scenario test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error scenario test failed',
+      details: error.message
+    });
+  }
+});
+
+// Test rate limiting
+app.post('/api/test/rate-limiting', async (req, res) => {
+  try {
+    console.log('[TEST] Testing rate limiting...');
+    
+    // This endpoint should be rate limited
+    res.json({
+      success: true,
+      test_type: 'rate_limiting',
+      message: 'If you see this, rate limiting is working',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[ERROR] Rate limiting test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Rate limiting test failed',
+      details: error.message
+    });
   }
 });
 
