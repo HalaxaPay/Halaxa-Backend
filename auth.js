@@ -62,11 +62,17 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
   nextBilling.setDate(nextBilling.getDate() + 30);
 
   const initializationResults = {
-    // Original tables
+    // Core essential tables (CRITICAL)
+    users: false, // Ensure users table record exists  
     user_profiles: false,
     user_plans: false,
     user_metrics: false,
     user_balances: false,
+    user_preferences: false,
+    user_subscriptions: false,
+    wallet_connections: false,
+    
+    // Dashboard data tables
     fees_saved: false,
     usdc_balances: false,
     network_distributions: false,
@@ -76,9 +82,9 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
     transaction_insights: false,
     user_growth: false,
     ai_oracle_messages: false,
-    // NEW TABLES from ADDITIONAL_TABLES.sql
+    
+    // Activity and analytics tables
     daily_activity: false,
-    user_subscriptions: false,
     payment_link_stats: false,
     network_stats: false,
     user_achievements: false,
@@ -89,16 +95,53 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
     monthly_performance: false,
     user_activity_sessions: false,
     payment_link_analytics: false,
-    wallet_connections: false,
     transaction_timeline: false,
-    user_preferences: false,
-    // MISSING TABLES THAT NEEDED USER ID INJECTION
+    
+    // Transaction and payment tables
     transactions: false,
     payment_links: false,
     billing_history: false
   };
 
   try {
+    // 0. ENSURE USER EXISTS IN USERS TABLE FIRST (MOST CRITICAL)
+    console.log('📋 Ensuring user exists in users table...');
+    try {
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('id', userId)
+        .single();
+      
+      if (existingUser) {
+        console.log('✅ User already exists in users table');
+        initializationResults.users = true;
+      } else if (checkError && checkError.code === 'PGRST116') {
+        // User doesn't exist - create them
+        const userData = { id: userId, email: email };
+        if (firstName) userData.first_name = firstName;
+        if (lastName) userData.last_name = lastName;
+        if (fullName) userData.full_name = fullName;
+        
+        const { data: insertedData, error: insertError } = await supabase
+          .from('users')
+          .insert([userData])
+          .select()
+          .single();
+        
+        if (insertError) {
+          console.error('❌ Failed to ensure user in users table:', insertError.message);
+          initializationResults.users = false;
+        } else {
+          console.log('✅ User successfully ensured in users table');
+          initializationResults.users = true;
+        }
+      }
+    } catch (exception) {
+      console.error('❌ Exception ensuring user in users table:', exception.message);
+      initializationResults.users = false;
+    }
+
     // 1. Initialize user_profiles (CRITICAL) - Match actual table structure
     initializationResults.user_profiles = await safeInsert('user_profiles', {
       user_id: userId,
@@ -137,16 +180,58 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       // Note: using last_active instead of last_updated to match schema
     }, 'Creating user balances');
 
-    // 5. Initialize fees_saved - Match actual table structure
+    // 5. Initialize user_preferences (CRITICAL) - Core user settings
+    initializationResults.user_preferences = await safeInsert('user_preferences', {
+      user_id: userId,
+      default_network: 'polygon',
+      notification_email: true,
+      notification_browser: true,
+      dashboard_theme: 'dark',
+      preferred_currency: 'USD',
+      auto_refresh_interval: 30
+    }, 'Creating user preferences');
+
+    // 6. Initialize user_subscriptions (CRITICAL) - User plan management
+    initializationResults.user_subscriptions = await safeInsert('user_subscriptions', {
+      user_id: userId,
+      plan_tier: 'basic',
+      plan_status: 'active',
+      started_at: currentTime,
+      next_billing_date: nextBilling.toISOString(),
+      auto_renewal: true,
+      monthly_fee: 0
+    }, 'Creating user subscription');
+
+    // 7. Initialize wallet_connections (CRITICAL) - Network wallet placeholders
+    console.log('💼 Creating wallet connections for all networks...');
+    const networks = ['polygon', 'solana', 'tron'];
+    let walletConnectionSuccess = true;
+    
+    for (const network of networks) {
+      const success = await safeInsert('wallet_connections', {
+        user_id: userId,
+        wallet_address: '',
+        network: network,
+        connection_type: 'manual',
+        is_primary: false,
+        is_active: false,
+        first_connected_at: currentTime,
+        last_used_at: currentTime
+      }, `Creating ${network} wallet connection placeholder`);
+      
+      if (!success) walletConnectionSuccess = false;
+    }
+    initializationResults.wallet_connections = walletConnectionSuccess;
+
+    // 8. Initialize fees_saved - Match actual table structure
     initializationResults.fees_saved = await safeInsert('fees_saved', {
       user_id: userId,
       saved_amount: 0
       // Note: removed fields that don't exist in actual table
     }, 'Creating fees saved tracking');
 
-    // 6. Initialize usdc_balances (Network-specific)
+    // 9. Initialize usdc_balances (Network-specific)
     console.log('💰 Creating network-specific USDC balances...');
-    const networks = ['polygon', 'solana', 'tron'];
     let usdcBalanceSuccess = true;
     
     for (const network of networks) {
@@ -162,7 +247,7 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
     }
     initializationResults.usdc_balances = usdcBalanceSuccess;
 
-    // 7. Initialize network_distributions (Network-specific)
+    // 10. Initialize network_distributions (Network-specific)
     console.log('🌐 Creating network distributions...');
     let networkDistributionSuccess = true;
     
@@ -461,25 +546,7 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       recorded_date: new Date().toISOString().split('T')[0]
     }, 'Creating fee savings history');
 
-    // 31. Initialize wallet_connections (placeholder for future wallets)
-    console.log('💼 Creating wallet connections for all networks...');
-    let walletConnectionsSuccess = true;
-    
-    for (const network of networks) {
-      const success = await safeInsert('wallet_connections', {
-        user_id: userId,
-        wallet_address: '',
-        network: network,
-        connection_type: 'manual',
-        is_primary: false,
-        is_active: false,
-        first_connected_at: currentTime,
-        last_used_at: currentTime
-      }, `Creating ${network} wallet connection placeholder`);
-      
-      if (!success) walletConnectionsSuccess = false;
-    }
-    initializationResults.wallet_connections = walletConnectionsSuccess;
+    // 31. Wallet connections already initialized above in step 7
 
     // Log final results
     const successCount = Object.values(initializationResults).filter(Boolean).length;
@@ -1009,7 +1076,7 @@ router.get('/google', async (req, res) => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}/SPA.html?oauth=google`,
+        redirectTo: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}/SPA.html`,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent'
