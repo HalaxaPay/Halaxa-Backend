@@ -1112,6 +1112,43 @@ router.get('/session', async (req, res) => {
   }
 });
 
+// Google OAuth initiation endpoint
+router.get('/google', async (req, res) => {
+  try {
+    console.log('🔄 Initiating Google OAuth...');
+    
+    // Use Supabase to generate Google OAuth URL
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}/SPA.html?oauth=google`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent'
+        }
+      }
+    });
+    
+    if (error) {
+      console.error('❌ Google OAuth URL generation failed:', error);
+      return res.status(500).json({ error: 'Failed to generate OAuth URL', details: error.message });
+    }
+    
+    console.log('✅ Google OAuth URL generated, redirecting...');
+    
+    // Redirect user to Google OAuth
+    if (data.url) {
+      return res.redirect(data.url);
+    } else {
+      return res.status(500).json({ error: 'No OAuth URL returned from Supabase' });
+    }
+    
+  } catch (error) {
+    console.error('❌ Google OAuth initiation error:', error);
+    return res.status(500).json({ error: 'OAuth initiation failed', details: error.message });
+  }
+});
+
 // Google OAuth sync endpoint
 router.post('/oauth-sync', async (req, res) => {
   try {
