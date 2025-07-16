@@ -590,188 +590,76 @@ router.post('/register', validateEmail, validatePassword, validateRequest, async
     console.log('📝 Inserting user data into users table...');
     let usersTableInserted = false;
     
-    // First, let's check if the users table exists and get its structure
     try {
-      console.log('🔍 Checking users table structure...');
-      const { data: tableInfo, error: tableError } = await supabase
-        .from('users')
-        .select('*')
-        .limit(1);
-      
-      if (tableError) {
-        console.error('❌ Error accessing users table:', {
-          message: tableError.message,
-          code: tableError.code,
-          details: tableError.details
-        });
-        console.log('⚠️ Users table may not exist or have permission issues');
-      } else {
-        console.log('✅ Users table is accessible');
-        if (tableInfo && tableInfo.length > 0) {
-          console.log('📋 Sample user record structure:', Object.keys(tableInfo[0]));
-        } else {
-          console.log('📋 Users table exists but is empty');
-        }
-      }
-    } catch (tableCheckException) {
-      console.error('❌ Exception checking users table:', tableCheckException.message);
-    }
-    
-    try {
-      console.log('🔍 Checking if user already exists in users table...');
-      
       // Check if user already exists in users table to prevent duplicates
+      console.log('🔍 Checking if user already exists in users table...');
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('id, email')
         .eq('id', newUser.id)
         .single();
       
-      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('❌ Error checking existing user in users table:', {
-          message: checkError.message,
-          code: checkError.code,
-          details: checkError.details,
-          hint: checkError.hint
-        });
-      } else if (existingUser) {
+      if (existingUser) {
         console.log('✅ User already exists in users table - skipping insert');
         usersTableInserted = true;
-      } else {
+      } else if (checkError && checkError.code === 'PGRST116') {
+        // PGRST116 = no rows returned, which means user doesn't exist - proceed with insert
         console.log('📝 User does not exist in users table - proceeding with insert...');
         
-        // Prepare user data for insert with ALL expected fields
+        // Prepare user data for insert - start with basic required fields only
         const userData = {
-          id: newUser.id, // Use same UUID as Supabase Auth
-          email: email,
-          password: '', // Empty password since we're using Supabase Auth
-          first_name: first_name || '',
-          last_name: last_name || '',
-          full_name: fullName || '',
-          plan: 'basic',
-          is_email_verified: true, // Auto-verified since using Supabase Auth admin
-          created_at: new Date().toISOString(),
-          last_login: new Date().toISOString(), // Set initial last login
-          refresh_token: '' // Empty initially, will be set during login
+          id: newUser.id,
+          email: email
         };
         
-        console.log('📋 Attempting insert with complete user data:', {
+        // Add optional fields if they exist
+        if (first_name) userData.first_name = first_name;
+        if (last_name) userData.last_name = last_name;
+        if (fullName) userData.full_name = fullName;
+        
+        console.log('📋 Attempting insert with user data:', {
           id: userData.id.substring(0, 8) + '****',
           email: userData.email,
-          password: userData.password ? '[HIDDEN]' : '[EMPTY]',
-          first_name: userData.first_name,
-          last_name: userData.last_name,
-          full_name: userData.full_name,
-          plan: userData.plan,
-          is_email_verified: userData.is_email_verified,
-          created_at: userData.created_at,
-          last_login: userData.last_login,
-          refresh_token: userData.refresh_token ? '[HIDDEN]' : '[EMPTY]'
+          first_name: userData.first_name || '[NOT SET]',
+          last_name: userData.last_name || '[NOT SET]',
+          full_name: userData.full_name || '[NOT SET]'
         });
         
-        // Try insert with complete fields
-        let insertResponse = await supabase
+        // Attempt the insert
+        const { data: insertedData, error: insertError } = await supabase
           .from('users')
           .insert([userData])
-          .select();
+          .select()
+          .single();
         
-        // If complete insert fails, try without optional fields
-        if (insertResponse.error) {
-          console.log('⚠️ Complete insert failed, trying without optional fields...');
-          
-          const minimalUserData = {
-            id: newUser.id,
-            email: email,
-            password: '',
-            first_name: first_name || '',
-            last_name: last_name || '',
-            full_name: fullName || '',
-            plan: 'basic',
-            is_email_verified: true
-          };
-          
-          console.log('📋 Retrying with minimal required fields:', {
-            id: minimalUserData.id.substring(0, 8) + '****',
-            email: minimalUserData.email,
-            password: '[EMPTY]',
-            first_name: minimalUserData.first_name,
-            last_name: minimalUserData.last_name,
-            full_name: minimalUserData.full_name,
-            plan: minimalUserData.plan,
-            is_email_verified: minimalUserData.is_email_verified
-          });
-          
-          insertResponse = await supabase
-            .from('users')
-            .insert([minimalUserData])
-            .select();
-          
-          // If minimal insert also fails, try with just the absolute basics
-          if (insertResponse.error) {
-            console.log('⚠️ Minimal insert also failed, trying with absolute basics...');
-            
-            const basicUserData = {
-              id: newUser.id,
-              email: email,
-              password: ''
-            };
-            
-            console.log('📋 Final attempt with absolute basics:', {
-              id: basicUserData.id.substring(0, 8) + '****',
-              email: basicUserData.email,
-              password: '[EMPTY]'
-            });
-            
-            insertResponse = await supabase
-              .from('users')
-              .insert([basicUserData])
-              .select();
-          }
-        }
-        
-        console.log('📊 Insert response received:', {
-          hasData: !!insertResponse.data,
-          dataLength: insertResponse.data?.length,
-          hasError: !!insertResponse.error,
-          errorMessage: insertResponse.error?.message,
-          errorCode: insertResponse.error?.code
-        });
-        
-        if (insertResponse.error) {
-          // Log detailed error information
+        if (insertError) {
           console.error('❌ Failed to insert user into users table:', {
-            message: insertResponse.error.message,
-            code: insertResponse.error.code,
-            details: insertResponse.error.details,
-            hint: insertResponse.error.hint,
-            schema: insertResponse.error.schema,
-            table: insertResponse.error.table,
-            column: insertResponse.error.column,
-            dataType: insertResponse.error.dataType,
-            constraint: insertResponse.error.constraint
+            message: insertError.message,
+            code: insertError.code,
+            details: insertError.details
           });
           console.log('⚠️ User signup successful but users table insert failed - continuing...');
-        } else if (insertResponse.data && insertResponse.data.length > 0) {
-          const insertedUser = insertResponse.data[0];
+        } else if (insertedData) {
           console.log('✅ User successfully inserted into users table:', {
-            id: insertedUser.id?.substring(0, 8) + '****',
-            email: insertedUser.email,
-            created_at: insertedUser.created_at
+            id: insertedData.id?.substring(0, 8) + '****',
+            email: insertedData.email
           });
           usersTableInserted = true;
-        } else {
-          console.warn('⚠️ Insert response has no data but no error - checking what happened...');
         }
+      } else {
+        // Other error occurred while checking for existing user
+        console.error('❌ Error checking existing user in users table:', {
+          message: checkError.message,
+          code: checkError.code
+        });
+        console.log('⚠️ Cannot verify if user exists in users table - skipping insert to avoid duplicates');
       }
     } catch (insertException) {
-      // Log detailed exception information
-      console.error('❌ Exception during users table insert:', {
+      console.error('❌ Exception during users table operations:', {
         message: insertException.message,
-        stack: insertException.stack,
-        name: insertException.name,
-        code: insertException.code
+        name: insertException.name
       });
-      console.log('⚠️ User signup successful but users table insert failed - continuing...');
+      console.log('⚠️ User signup successful but users table operations failed - continuing...');
     }
     
     // Log the final status
@@ -1170,38 +1058,54 @@ router.post('/oauth-sync', async (req, res) => {
     const last_name = user.user_metadata?.last_name || '';
     const fullName = user.user_metadata?.full_name || [first_name, last_name].filter(Boolean).join(' ');
 
-    // Check if user exists in custom users table
-    let { data: existingUser, error: checkError } = await supabase
-      .from('users')
-      .select('id, email')
-      .eq('id', userId)
-      .single();
-
-    if (checkError && checkError.code !== 'PGRST116') {
-      return res.status(500).json({ error: 'Error checking user in users table', details: checkError.message });
-    }
-
-    if (!existingUser) {
-      // Insert user into custom users table
-      const userData = {
-        id: userId,
-        email: email,
-        password: '',
-        first_name: first_name,
-        last_name: last_name,
-        full_name: fullName,
-        plan: 'basic',
-        is_email_verified: true, // Google users are always verified
-        created_at: new Date().toISOString(),
-        last_login: new Date().toISOString(),
-        refresh_token: ''
-      };
-      const { error: insertError } = await supabase
+    // Check if user exists in custom users table using simplified logic
+    console.log('🔍 Checking if Google user exists in users table...');
+    let usersTableInserted = false;
+    
+    try {
+      const { data: existingUser, error: checkError } = await supabase
         .from('users')
-        .insert([userData]);
-      if (insertError) {
-        return res.status(500).json({ error: 'Failed to insert Google user', details: insertError.message });
+        .select('id, email')
+        .eq('id', userId)
+        .single();
+      
+      if (existingUser) {
+        console.log('✅ Google user already exists in users table');
+        usersTableInserted = true;
+      } else if (checkError && checkError.code === 'PGRST116') {
+        // User doesn't exist - create them
+        console.log('📝 Google user does not exist in users table - creating...');
+        
+        const userData = {
+          id: userId,
+          email: email
+        };
+        
+        // Add optional fields if they exist
+        if (first_name) userData.first_name = first_name;
+        if (last_name) userData.last_name = last_name;
+        if (fullName) userData.full_name = fullName;
+        
+        const { data: insertedData, error: insertError } = await supabase
+          .from('users')
+          .insert([userData])
+          .select()
+          .single();
+        
+        if (insertError) {
+          console.error('❌ Failed to insert Google user:', insertError.message);
+          // Don't fail the entire OAuth process - continue
+        } else if (insertedData) {
+          console.log('✅ Google user successfully inserted into users table');
+          usersTableInserted = true;
+        }
+      } else {
+        console.error('❌ Error checking Google user in users table:', checkError.message);
+        // Don't fail the OAuth process - continue
       }
+    } catch (exception) {
+      console.error('❌ Exception during Google user table operations:', exception.message);
+      // Don't fail the OAuth process - continue
     }
 
     // Initialize dashboard tables (idempotent)
@@ -1237,6 +1141,144 @@ router.post('/oauth-sync', async (req, res) => {
 });
 
 // ==================== DEBUG/ADMIN UTILITIES ==================== //
+
+// Validate user session endpoint
+router.get('/validate-session', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: 'No token provided',
+        authenticated: false
+      });
+    }
+
+    // Verify JWT token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Check if user exists in users table
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, plan')
+      .eq('id', decoded.id)
+      .single();
+
+    if (error || !user) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: 'User not found in database',
+        authenticated: false
+      });
+    }
+
+    res.json({
+      valid: true,
+      authenticated: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        plan: user.plan || 'basic'
+      }
+    });
+  } catch (error) {
+    console.error('Session validation error:', error);
+    res.status(401).json({ 
+      valid: false, 
+      error: 'Invalid or expired token',
+      authenticated: false
+    });
+  }
+});
+
+// Recovery endpoint for users with authentication issues
+router.post('/recover-user', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    console.log('🔄 Attempting user recovery for:', email);
+    
+    // Check Supabase Auth for this user
+    const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+    
+    if (authError) {
+      return res.status(500).json({ error: 'Failed to fetch auth users', details: authError.message });
+    }
+    
+    const authUser = authUsers.users.find(user => user.email === email);
+    
+    if (!authUser) {
+      return res.status(404).json({ error: 'User not found in authentication system' });
+    }
+    
+    // Check if user exists in custom users table
+    const { data: customUser, error: customError } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('id', authUser.id)
+      .single();
+    
+    if (customUser) {
+      return res.json({ 
+        message: 'User already exists in users table',
+        user: { id: customUser.id, email: customUser.email },
+        recovery_needed: false
+      });
+    }
+    
+    // User missing from custom table - recover them
+    console.log('🔧 Recovering user:', email);
+    
+    const userData = {
+      id: authUser.id,
+      email: authUser.email
+    };
+    
+    // Add optional fields if available
+    if (authUser.user_metadata?.first_name) userData.first_name = authUser.user_metadata.first_name;
+    if (authUser.user_metadata?.last_name) userData.last_name = authUser.user_metadata.last_name;
+    if (authUser.user_metadata?.full_name) userData.full_name = authUser.user_metadata.full_name;
+    
+    const { data: recoveredUser, error: insertError } = await supabase
+      .from('users')
+      .insert([userData])
+      .select()
+      .single();
+    
+    if (insertError) {
+      console.error('❌ Failed to recover user:', insertError.message);
+      return res.status(500).json({ error: 'Failed to recover user', details: insertError.message });
+    }
+    
+    // Initialize dashboard tables for recovered user
+    await initializeUserDashboardTables(
+      authUser.id, 
+      authUser.email, 
+      authUser.user_metadata?.first_name || '',
+      authUser.user_metadata?.last_name || ''
+    );
+    
+    console.log('✅ User recovered successfully:', email);
+    
+    res.json({
+      message: 'User recovered successfully',
+      user: recoveredUser,
+      recovery_needed: true
+    });
+    
+  } catch (error) {
+    console.error('❌ User recovery error:', error);
+    res.status(500).json({ error: 'Recovery failed', details: error.message });
+  }
+});
 
 // Get all users from custom users table
 router.get('/admin/users', async (req, res) => {
