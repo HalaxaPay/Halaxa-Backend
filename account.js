@@ -2,6 +2,7 @@ import express from 'express';
 import { supabase } from './supabase.js';
 import { authenticateToken } from './authMiddleware.js';
 import { validateRequest } from './security.js';
+import { getPricingForIP, getClientIP } from './geoBlock.js';
 
 const router = express.Router();
 
@@ -254,7 +255,13 @@ router.get('/plan-status', authenticateToken, async (req, res) => {
       memberSince = userAuthResult.value.data.user.created_at;
     }
 
-    // Get plan details
+    // Get geo-based pricing
+    const clientIP = getClientIP(req);
+    const geoPricing = getPricingForIP(clientIP);
+    
+    console.log(`💰 Pricing for IP ${clientIP}: ${JSON.stringify(geoPricing)}`);
+
+    // Get plan details with geo-based pricing
     const planDetails = {
       basic: {
         name: 'Basic Plan',
@@ -264,13 +271,15 @@ router.get('/plan-status', authenticateToken, async (req, res) => {
       },
       pro: {
         name: 'Pro Plan', 
-        price: 29,
+        price: geoPricing.pro.monthly,
+        yearlyPrice: geoPricing.pro.yearly,
         limits: { paymentLinks: 30, networks: ['polygon', 'solana'] },
         features: ['30 Payment Links', 'Polygon + Solana Networks', 'Capital Analytics', 'Priority Support']
       },
       elite: {
         name: 'Elite Plan',
-        price: 99,
+        price: geoPricing.elite.monthly,
+        yearlyPrice: geoPricing.elite.yearly,
         limits: { paymentLinks: -1, networks: ['polygon', 'solana', 'tron'] }, // unlimited
         features: ['Unlimited Payment Links', 'All Networks', 'Orders & Shipping', 'Custom Branding', '24/7 Support']
       }
@@ -281,7 +290,8 @@ router.get('/plan-status', authenticateToken, async (req, res) => {
       planDetails: planDetails[currentPlan],
       allPlans: planDetails,
       status: planStatus,
-      memberSince: memberSince
+      memberSince: memberSince,
+      geoPricing: geoPricing
     });
 
   } catch (error) {
@@ -314,9 +324,21 @@ router.get('/upgrade-options/:targetPlan', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'Cannot downgrade or same plan' });
     }
 
+    // Get geo-based pricing
+    const clientIP = getClientIP(req);
+    const geoPricing = getPricingForIP(clientIP);
+
     const pricing = {
-      pro: { price: 29, priceId: 'price_123_pro' },
-      elite: { price: 99, priceId: 'price_456_elite' }
+      pro: { 
+        price: geoPricing.pro.monthly, 
+        yearlyPrice: geoPricing.pro.yearly,
+        priceId: 'price_123_pro' 
+      },
+      elite: { 
+        price: geoPricing.elite.monthly, 
+        yearlyPrice: geoPricing.elite.yearly,
+        priceId: 'price_456_elite' 
+      }
     };
 
     res.json({
@@ -324,6 +346,7 @@ router.get('/upgrade-options/:targetPlan', authenticateToken, async (req, res) =
       currentPlan,
       targetPlan,
       pricing: pricing[targetPlan],
+      geoPricing: geoPricing,
       savings: targetPlan === 'elite' ? 'Best Value - Save 40%' : null
     });
 
@@ -736,43 +759,9 @@ router.get('/user-metrics', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== COMPREHENSIVE ENGINE.JS CALCULATION ENDPOINTS ==================== //
+// ==================== NON-NUMERICAL ENDPOINTS (INFORMATIONAL ONLY) ==================== //
 
-// Get ALL dashboard analytics using Engine.js comprehensive analytics
-router.get('/dashboard-analytics-complete', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    console.log('🎯 Fetching COMPLETE dashboard analytics for user:', userId.substring(0, 8) + '****');
-    
-    const { HalaxaEngine } = await import('./Engine.js');
-    const result = await HalaxaEngine.getAllDashboardAnalytics(userId);
-    
-    if (result.success) {
-      console.log('✅ Complete dashboard analytics loaded successfully');
-      res.json(result.data);
-    } else {
-      console.warn('⚠️ Dashboard analytics failed:', result.error);
-      res.status(500).json({ error: result.error });
-    }
-  } catch (error) {
-    console.error('❌ Complete dashboard analytics error:', error);
-    res.status(500).json({ error: 'Failed to fetch complete dashboard analytics' });
-  }
-});
-
-// Monthly Constellation Data (12-month revenue analysis)
-router.get('/monthly-constellation', authenticateToken, async (req, res) => {
-  try {
-    const { HalaxaEngine } = await import('./Engine.js');
-    const result = await HalaxaEngine.getMonthlyConstellationData(req.user.id);
-    res.json(result.success ? result.data : { error: result.error });
-  } catch (error) {
-    console.error('Monthly constellation error:', error);
-    res.status(500).json({ error: 'Failed to fetch monthly constellation data' });
-  }
-});
-
-// AI Financial Insights (Predictive Analytics)
+// AI Financial Insights (Predictive Analytics) - KEPT: Non-numerical insights
 router.get('/ai-insights', authenticateToken, async (req, res) => {
   try {
     const { HalaxaEngine } = await import('./Engine.js');
@@ -784,56 +773,7 @@ router.get('/ai-insights', authenticateToken, async (req, res) => {
   }
 });
 
-// Transaction Velocity Data
-router.get('/transaction-velocity', authenticateToken, async (req, res) => {
-  try {
-    const { HalaxaEngine } = await import('./Engine.js');
-    const result = await HalaxaEngine.getTransactionVelocityData(req.user.id);
-    res.json(result.success ? result.data : { error: result.error });
-  } catch (error) {
-    console.error('Transaction velocity error:', error);
-    res.status(500).json({ error: 'Failed to fetch transaction velocity' });
-  }
-});
-
-// Digital Vault Data (Balance Aggregations)
-router.get('/digital-vault', authenticateToken, async (req, res) => {
-  try {
-    const { HalaxaEngine } = await import('./Engine.js');
-    const result = await HalaxaEngine.getDigitalVaultData(req.user.id);
-    res.json(result.success ? result.data : { error: result.error });
-  } catch (error) {
-    console.error('Digital vault error:', error);
-    res.status(500).json({ error: 'Failed to fetch digital vault data' });
-  }
-});
-
-// USDC Flow Data (Inflow/Outflow Analysis)
-router.get('/usdc-flow/:period', authenticateToken, async (req, res) => {
-  try {
-    const { HalaxaEngine } = await import('./Engine.js');
-    const period = req.params.period || '30D';
-    const result = await HalaxaEngine.fetchUSDCFlowData(req.user.id, period);
-    res.json(result);
-  } catch (error) {
-    console.error('USDC flow error:', error);
-    res.status(500).json({ error: 'Failed to fetch USDC flow data' });
-  }
-});
-
-// User Growth Data (4-month analysis)
-router.get('/user-growth', authenticateToken, async (req, res) => {
-  try {
-    const { HalaxaEngine } = await import('./Engine.js');
-    const result = await HalaxaEngine.fetchUserGrowthData();
-    res.json(result);
-  } catch (error) {
-    console.error('User growth error:', error);
-    res.status(500).json({ error: 'Failed to fetch user growth data' });
-  }
-});
-
-// Billing History Data
+// Billing History Data - KEPT: Non-numerical informational data
 router.get('/billing-history', authenticateToken, async (req, res) => {
   try {
     const { HalaxaEngine } = await import('./Engine.js');
@@ -842,18 +782,6 @@ router.get('/billing-history', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Billing history error:', error);
     res.status(500).json({ error: 'Failed to fetch billing history' });
-  }
-});
-
-// Order Management Analytics
-router.get('/order-analytics', authenticateToken, async (req, res) => {
-  try {
-    const { HalaxaEngine } = await import('./Engine.js');
-    const result = await HalaxaEngine.populateOrderCards();
-    res.json(result);
-  } catch (error) {
-    console.error('Order analytics error:', error);
-    res.status(500).json({ error: 'Failed to fetch order analytics' });
   }
 });
 
@@ -922,6 +850,6 @@ router.get('/plan-status', authenticateToken, async (req, res) => {
   }
 });
 
-console.log('✅ ACCOUNT.JS: All Engine.js calculation endpoints loaded successfully');
+console.log('✅ ACCOUNT.JS: User profile, plan status, AI insights, and billing history endpoints loaded successfully');
 
 export default router; 
