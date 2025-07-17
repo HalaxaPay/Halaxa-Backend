@@ -17,6 +17,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Configure Express to trust Render's proxy (fixes X-Forwarded-For validation errors)
+app.set('trust proxy', true);
+
 // CORS configuration - More explicit for newer CORS versions
 const corsOptions = {
     origin: function (origin, callback) {
