@@ -25,9 +25,12 @@ const corsOptions = {
         
         const allowedOrigins = [
             'https://halaxapay.com',
+            'https://www.halaxapay.com',
             'http://localhost:3000',
             'http://localhost:5173',
             'http://127.0.0.1:5173',
+            'http://127.0.0.1:8080',
+            'http://localhost:8080',
             process.env.FRONTEND_URL
         ].filter(Boolean);
         
@@ -48,7 +51,7 @@ const corsOptions = {
         'Access-Control-Allow-Headers',
         'Access-Control-Allow-Origin'
     ],
-    credentials: true,
+    credentials: false, // Changed to false to match frontend omit setting
     preflightContinue: false,
     optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
 };
@@ -121,10 +124,14 @@ app.get('/test', (req, res) => {
   console.log('🧪 Test route accessed from origin:', req.headers.origin);
   
   // Manually set CORS headers as backup
-      res.header('Access-Control-Allow-Origin', 'https://halaxapay.com');
+  const allowedOrigins = ['https://halaxapay.com', 'https://www.halaxapay.com' ,];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin');
-  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Credentials', 'false'); // Changed to false since frontend uses omit
   
   res.json({ 
     message: 'Halaxa backend is running!', 
@@ -985,10 +992,7 @@ app.post('/api/test/rate-limiting', async (req, res) => {
   }
 });
 
-// Add a test endpoint
-app.get('/test', (req, res) => {
-    res.json({ message: 'Backend is running!' });
-});
+// Duplicate test endpoint removed - using the one with CORS headers above
 
 // Health check endpoint
 app.get('/health', (req, res) => {
