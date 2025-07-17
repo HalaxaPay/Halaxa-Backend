@@ -1072,7 +1072,10 @@ router.get('/google', async (req, res) => {
     console.log('🔄 Initiating Google OAuth...');
     
     // Create a special redirect URL that will handle the OAuth callback
-    const redirectTo = `${process.env.FRONTEND_URL || 'https://halaxapay.com'}/oauth-callback.html`;
+    const frontendBaseUrl = process.env.FRONTEND_URL || 'https://halaxapay.com';
+    const redirectTo = `${frontendBaseUrl}/oauth-callback.html`;
+    
+    console.log('🔗 OAuth redirect URL:', redirectTo);
     
     // Use Supabase to generate Google OAuth URL
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -1109,16 +1112,32 @@ router.get('/google', async (req, res) => {
 // Google OAuth sync endpoint
 router.post('/oauth-sync', async (req, res) => {
   try {
+    console.log('🔄 OAuth sync request received');
+    console.log('📋 Request body keys:', Object.keys(req.body || {}));
+    
     const { supabaseToken } = req.body;
     if (!supabaseToken) {
+      console.error('❌ Missing Supabase Auth token in request');
       return res.status(400).json({ error: 'Missing Supabase Auth token' });
     }
 
+    console.log('🔍 Supabase token received (length):', supabaseToken.length);
+
     // Get user info from Supabase Auth using the token
+    console.log('🔄 Getting user from Supabase...');
     const { data: { user }, error: userError } = await supabase.auth.getUser(supabaseToken);
-    if (userError || !user) {
-      return res.status(401).json({ error: 'Invalid Supabase Auth token', details: userError?.message });
+    
+    if (userError) {
+      console.error('❌ Supabase getUser error:', userError);
+      return res.status(401).json({ error: 'Invalid Supabase Auth token', details: userError.message });
     }
+    
+    if (!user) {
+      console.error('❌ No user returned from Supabase');
+      return res.status(401).json({ error: 'No user found with provided token' });
+    }
+
+    console.log('✅ User retrieved from Supabase:', user.email);
 
     // Extract user info
     const userId = user.id;
@@ -1178,9 +1197,12 @@ router.post('/oauth-sync', async (req, res) => {
     }
 
     // Initialize dashboard tables (idempotent)
+    console.log('🔄 Initializing dashboard tables...');
     await initializeUserDashboardTables(userId, email, first_name, last_name);
+    console.log('✅ Dashboard tables initialized');
 
     // Generate backend JWT tokens
+    console.log('🔑 Generating JWT tokens...');
     const accessToken = jwt.sign(
       { id: userId, email: email },
       process.env.JWT_SECRET || 'your-temporary-secret-key',
@@ -1191,6 +1213,8 @@ router.post('/oauth-sync', async (req, res) => {
       process.env.JWT_REFRESH_SECRET || 'your-temporary-refresh-key',
       { expiresIn: '7d' }
     );
+
+    console.log('✅ OAuth sync completed successfully for:', email);
 
     res.json({
       accessToken,
@@ -1204,7 +1228,8 @@ router.post('/oauth-sync', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('OAuth sync error:', error);
+    console.error('❌ OAuth sync error:', error);
+    console.error('❌ Error stack:', error.stack);
     res.status(500).json({ error: 'OAuth sync failed', details: error.message });
   }
 });
