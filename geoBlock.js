@@ -10,6 +10,16 @@ const BLOCKED_COUNTRIES = [
   'RU'  // Russia
 ];
 
+// Countries with special pricing (ISO 2-letter country codes)
+const SPECIAL_PRICING_COUNTRIES = [
+  'IN', // India
+  'NG', // Nigeria
+  'VN', // Vietnam
+  'ID', // Indonesia
+  'BR', // Brazil
+  'AR'  // Argentina
+];
+
 // Country names for logging
 const COUNTRY_NAMES = {
   'SY': 'Syria',
@@ -17,13 +27,93 @@ const COUNTRY_NAMES = {
   'CU': 'Cuba',
   'IR': 'Iran',
   'UA': 'Ukraine',
-  'RU': 'Russia'
+  'RU': 'Russia',
+  'IN': 'India',
+  'NG': 'Nigeria',
+  'VN': 'Vietnam',
+  'ID': 'Indonesia',
+  'BR': 'Brazil',
+  'AR': 'Argentina'
 };
+
+// Pricing configurations
+const PRICING_CONFIGS = {
+  // Special pricing for developing countries
+  special: {
+    pro: {
+      monthly: 12,
+      yearly: 9
+    },
+    elite: {
+      monthly: 29,
+      yearly: 19
+    }
+  },
+  // Default pricing for rest of world
+  default: {
+    pro: {
+      monthly: 29,
+      yearly: 20
+    },
+    elite: {
+      monthly: 59,
+      yearly: 49
+    }
+  }
+};
+
+/**
+ * Get pricing based on country code
+ */
+export function getPricingForCountry(countryCode) {
+  try {
+    if (!countryCode) {
+      console.log('🌍 No country code provided, using default pricing');
+      return PRICING_CONFIGS.default;
+    }
+
+    if (SPECIAL_PRICING_COUNTRIES.includes(countryCode.toUpperCase())) {
+      const countryName = COUNTRY_NAMES[countryCode.toUpperCase()] || countryCode;
+      console.log(`💰 Special pricing applied for ${countryName} (${countryCode})`);
+      return PRICING_CONFIGS.special;
+    }
+
+    const countryName = COUNTRY_NAMES[countryCode.toUpperCase()] || countryCode;
+    console.log(`💰 Default pricing applied for ${countryName} (${countryCode})`);
+    return PRICING_CONFIGS.default;
+  } catch (error) {
+    console.error('❌ Error determining pricing for country:', error);
+    return PRICING_CONFIGS.default;
+  }
+}
+
+/**
+ * Get pricing based on IP address
+ */
+export function getPricingForIP(ipAddress) {
+  try {
+    if (!ipAddress || ipAddress === '127.0.0.1' || ipAddress === 'localhost' || ipAddress.startsWith('192.168.') || ipAddress.startsWith('10.')) {
+      console.log('🏠 Localhost detected - using default pricing');
+      return PRICING_CONFIGS.default;
+    }
+
+    const geo = geoip.lookup(ipAddress);
+    if (!geo) {
+      console.log(`🔍 Could not determine location for IP: ${ipAddress} - using default pricing`);
+      return PRICING_CONFIGS.default;
+    }
+
+    return getPricingForCountry(geo.country);
+  } catch (error) {
+    console.error('❌ Error determining pricing for IP:', error);
+    return PRICING_CONFIGS.default;
+  }
+}
 
 /**
  * Get client IP address from request
  */
-function getClientIP(req) {
+export function getClientIP(req) {
   // Check various headers for the real IP
   const xForwardedFor = req.headers['x-forwarded-for'];
   const xRealIP = req.headers['x-real-ip'];
@@ -160,6 +250,40 @@ if (document.readyState === 'loading') {
 };
 
 /**
+ * Get pricing middleware that adds country-based pricing to request
+ */
+export const geoPricingMiddleware = (req, res, next) => {
+  try {
+    const clientIP = getClientIP(req);
+    const pricing = getPricingForIP(clientIP);
+    
+    // Add pricing and geo info to request object
+    req.geoPricing = pricing;
+    req.geoInfo = {
+      ip: clientIP,
+      country: null
+    };
+
+    // Try to get country info
+    if (clientIP && clientIP !== '127.0.0.1' && !clientIP.startsWith('192.168.') && !clientIP.startsWith('10.')) {
+      const geo = geoip.lookup(clientIP);
+      if (geo) {
+        req.geoInfo.country = geo.country;
+        req.geoInfo.countryName = COUNTRY_NAMES[geo.country] || geo.country;
+      }
+    }
+
+    next();
+  } catch (error) {
+    console.error('❌ Error in geo-pricing middleware:', error);
+    // Fallback to default pricing
+    req.geoPricing = PRICING_CONFIGS.default;
+    req.geoInfo = { ip: null, country: null };
+    next();
+  }
+};
+
+/**
  * Get admin endpoint to check geo-blocking status
  */
 export const geoAdminRoutes = (router) => {
@@ -195,6 +319,55 @@ export const geoAdminRoutes = (router) => {
       geo: geo || 'Unknown',
       isBlocked,
       countryName: geo ? (COUNTRY_NAMES[geo.country] || geo.country) : 'Unknown'
+    });
+  });
+
+  // Get current pricing for client
+  router.get('/pricing/current', (req, res) => {
+    const clientIP = getClientIP(req);
+    const pricing = getPricingForIP(clientIP);
+    const geo = geoip.lookup(clientIP);
+    
+    res.json({
+      pricing,
+      geo: {
+        ip: clientIP,
+        country: geo?.country || null,
+        countryName: geo ? (COUNTRY_NAMES[geo.country] || geo.country) : null,
+        isSpecialPricing: geo ? SPECIAL_PRICING_COUNTRIES.includes(geo.country) : false
+      }
+    });
+  });
+
+  // Test pricing for specific country or IP
+  router.post('/pricing/test', (req, res) => {
+    const { country, testIP } = req.body;
+    
+    let pricing, geoInfo;
+    
+    if (country) {
+      pricing = getPricingForCountry(country);
+      geoInfo = {
+        country: country.toUpperCase(),
+        countryName: COUNTRY_NAMES[country.toUpperCase()] || country,
+        isSpecialPricing: SPECIAL_PRICING_COUNTRIES.includes(country.toUpperCase())
+      };
+    } else if (testIP) {
+      pricing = getPricingForIP(testIP);
+      const geo = geoip.lookup(testIP);
+      geoInfo = {
+        ip: testIP,
+        country: geo?.country || null,
+        countryName: geo ? (COUNTRY_NAMES[geo.country] || geo.country) : null,
+        isSpecialPricing: geo ? SPECIAL_PRICING_COUNTRIES.includes(geo.country) : false
+      };
+    } else {
+      return res.status(400).json({ error: 'Either country or testIP required' });
+    }
+    
+    res.json({
+      pricing,
+      geo: geoInfo
     });
   });
 };

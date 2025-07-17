@@ -2,7 +2,7 @@ import express from 'express';
 import { supabase } from './supabase.js';
 import { authenticateToken } from './authMiddleware.js';
 import { validateRequest } from './security.js';
-import { getPricingForIP, getClientIP } from './geoBlock.js';
+// Dynamic import for geoBlock to avoid module loading issues
 
 const router = express.Router();
 
@@ -255,7 +255,8 @@ router.get('/plan-status', authenticateToken, async (req, res) => {
       memberSince = userAuthResult.value.data.user.created_at;
     }
 
-    // Get geo-based pricing
+    // Get geo-based pricing using dynamic import
+    const { getClientIP, getPricingForIP } = await import('./geoBlock.js');
     const clientIP = getClientIP(req);
     const geoPricing = getPricingForIP(clientIP);
     
@@ -324,7 +325,8 @@ router.get('/upgrade-options/:targetPlan', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'Cannot downgrade or same plan' });
     }
 
-    // Get geo-based pricing
+    // Get geo-based pricing using dynamic import
+    const { getClientIP, getPricingForIP } = await import('./geoBlock.js');
     const clientIP = getClientIP(req);
     const geoPricing = getPricingForIP(clientIP);
 
