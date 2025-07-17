@@ -1072,11 +1072,14 @@ router.get('/google', async (req, res) => {
   try {
     console.log('🔄 Initiating Google OAuth...');
     
+    // Create a special redirect URL that will handle the OAuth callback
+    const redirectTo = `${process.env.FRONTEND_URL || 'https://halaxapay.com'}/oauth-callback.html`;
+    
     // Use Supabase to generate Google OAuth URL
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}/SPA.html`,
+        redirectTo: redirectTo,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent'
