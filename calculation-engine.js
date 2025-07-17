@@ -294,7 +294,6 @@ class HalaxaCalculationEngine {
         total: 0,
         polygon: 0,
         solana: 0,
-        tron: 0,
         network_breakdown: {},
         wallet_count: userWallets.length
       };
@@ -316,7 +315,7 @@ class HalaxaCalculationEngine {
       return balances;
     } catch (error) {
       console.error('Error calculating balances:', error);
-      return { total: 0, polygon: 0, solana: 0, tron: 0, network_breakdown: {}, wallet_count: 0 };
+      return { total: 0, polygon: 0, solana: 0, network_breakdown: {}, wallet_count: 0 };
     }
   }
 
@@ -700,7 +699,7 @@ class HalaxaCalculationEngine {
    */
   getFallbackData() {
     return {
-      balances: { total: 0, polygon: 0, solana: 0, tron: 0, network_breakdown: {}, wallet_count: 0 },
+      balances: { total: 0, polygon: 0, solana: 0, network_breakdown: {}, wallet_count: 0 },
       analytics: { total_volume: 0, transaction_count: 0, success_rate: 0, volume_24h: 0, average_transaction_size: 0, largest_transaction: 0, smallest_transaction: 0 },
       insights: { message: "Loading real-time data...", type: "system", risk_score: 85, total_volume: 0, transaction_count: 0, success_rate: 0 },
       velocity: { total_executions: 0, daily_average: 0, recent_count: 0, velocity: 0 },

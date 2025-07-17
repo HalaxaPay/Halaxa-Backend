@@ -5,6 +5,7 @@ import express from 'express';
 import Stripe from 'stripe';
 import bodyParser from 'body-parser';
 import { supabase } from './supabase.js';
+import { getPricingForIP, getClientIP } from './geoBlock.js';
 
 const router = express.Router();
 
@@ -39,7 +40,7 @@ const PLAN_CONFIGS = {
 // Create checkout session endpoint
 router.post('/create-checkout-session', async (req, res) => {
   try {
-    const { plan, email, userId } = req.body;
+    const { plan, email, userId, billing = 'monthly' } = req.body;
 
     if (!plan || !email) {
       return res.status(400).json({ error: 'Plan and email are required' });
@@ -49,6 +50,16 @@ router.post('/create-checkout-session', async (req, res) => {
     if (!planConfig) {
       return res.status(400).json({ error: 'Invalid plan selected' });
     }
+
+    // Get geo-based pricing
+    const clientIP = getClientIP(req);
+    const geoPricing = getPricingForIP(clientIP);
+    
+    // Determine price based on billing cycle
+    const planPrice = billing === 'yearly' ? geoPricing[plan].yearly : geoPricing[plan].monthly;
+    const billingDescription = billing === 'yearly' ? 'Annual' : 'Monthly';
+    
+    console.log(`💰 Checkout session for ${plan} plan: $${planPrice} (${billing}) - IP: ${clientIP}`);
 
     // Check if Stripe is configured
     if (!stripe) {
@@ -65,7 +76,8 @@ router.post('/create-checkout-session', async (req, res) => {
         sessionId: 'dev_session_' + Date.now(),
         url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=success&plan=${plan}&dev=true`,
         devMode: true,
-        message: 'Development mode: Plan upgraded automatically'
+        message: 'Development mode: Plan upgraded automatically',
+        pricing: { [plan]: planPrice, billing }
       });
     }
 
@@ -77,10 +89,10 @@ router.post('/create-checkout-session', async (req, res) => {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: planConfig.name,
+              name: `${planConfig.name} (${billingDescription})`,
               description: `Upgrade to ${planConfig.name} - ${planConfig.features.join(', ')}`
             },
-            unit_amount: planConfig.price * 100, // Convert to cents
+            unit_amount: planPrice * 100, // Convert to cents
           },
           quantity: 1,
         },
@@ -89,16 +101,19 @@ router.post('/create-checkout-session', async (req, res) => {
       customer_email: email,
       metadata: {
         plan: plan,
+        billing: billing,
+        price: planPrice.toString(),
         userId: userId || '',
         email: email
       },
-              success_url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=success&plan=${plan}`,
-        cancel_url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=cancelled`,
+      success_url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=success&plan=${plan}&billing=${billing}`,
+      cancel_url: `${process.env.FRONTEND_URL || 'https://halaxapay.com'}?upgrade=cancelled`,
     });
 
     res.json({ 
       sessionId: session.id,
-      url: session.url
+      url: session.url,
+      pricing: { [plan]: planPrice, billing }
     });
 
   } catch (error) {

@@ -174,7 +174,6 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
       wallet_address: '',
       is_active: true,
       usdc_polygon: 0,
-      usdc_tron: 0,
       usdc_solana: 0,
       usd_equivalent: 0
       // Note: using last_active instead of last_updated to match schema
@@ -204,7 +203,7 @@ async function initializeUserDashboardTables(userId, email, firstName, lastName)
 
     // 7. Initialize wallet_connections (CRITICAL) - Network wallet placeholders
     console.log('💼 Creating wallet connections for all networks...');
-    const networks = ['polygon', 'solana', 'tron'];
+    const networks = ['polygon', 'solana'];
     let walletConnectionSuccess = true;
     
     for (const network of networks) {

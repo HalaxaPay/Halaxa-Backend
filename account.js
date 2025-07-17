@@ -281,7 +281,7 @@ router.get('/plan-status', authenticateToken, async (req, res) => {
         name: 'Elite Plan',
         price: geoPricing.elite.monthly,
         yearlyPrice: geoPricing.elite.yearly,
-        limits: { paymentLinks: -1, networks: ['polygon', 'solana', 'tron'] }, // unlimited
+        limits: { paymentLinks: -1, networks: ['polygon', 'solana'] }, // unlimited
         features: ['Unlimited Payment Links', 'All Networks', 'Orders & Shipping', 'Custom Branding', '24/7 Support']
       }
     };
